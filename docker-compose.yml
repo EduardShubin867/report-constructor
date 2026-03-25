@@ -3,6 +3,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    extra_hosts:
+      - "devsql:10.10.129.117"
     ports:
       - "3400:3000"
     environment:
