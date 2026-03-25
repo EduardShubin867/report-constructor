@@ -33,11 +33,12 @@ interface ReportFiltersProps {
   filters: FilterValues;
   options: FilterOptions;
   loading: boolean;
+  filtersLoading?: boolean;
   onFiltersChange: (f: FilterValues) => void;
   onSubmit: () => void;
 }
 
-export default function ReportFilters({ filters, options, loading, onFiltersChange, onSubmit }: ReportFiltersProps) {
+export default function ReportFilters({ filters, options, loading, filtersLoading, onFiltersChange, onSubmit }: ReportFiltersProps) {
   function set<K extends keyof FilterValues>(key: K, value: FilterValues[K]) {
     onFiltersChange({ ...filters, [key]: value });
   }
@@ -71,11 +72,11 @@ export default function ReportFilters({ filters, options, loading, onFiltersChan
       {/* Grid */}
       <div className="px-5 py-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         <MultiSelect label="Агент" options={options.агенты} value={filters.агент}
-          onChange={v => set('агент', v)} placeholder="Все агенты" />
+          onChange={v => set('агент', v)} placeholder="Все агенты" loading={filtersLoading} />
         <MultiSelect label="Регион" options={options.регионы} value={filters.регион}
-          onChange={v => set('регион', v)} placeholder="Все регионы" />
+          onChange={v => set('регион', v)} placeholder="Все регионы" loading={filtersLoading} />
         <MultiSelect label="Вид договора" options={options.видыДоговора} value={filters.видДоговора}
-          onChange={v => set('видДоговора', v)} placeholder="Все виды" />
+          onChange={v => set('видДоговора', v)} placeholder="Все виды" loading={filtersLoading} />
 
         <div className="flex flex-col gap-1">
           <label className="block text-sm font-medium text-gray-700">Период</label>
@@ -89,13 +90,13 @@ export default function ReportFilters({ filters, options, loading, onFiltersChan
         </div>
 
         <MultiSelect label="Территория ТС" options={options.территории} value={filters.территория}
-          onChange={v => set('территория', v)} placeholder="Все территории" />
+          onChange={v => set('территория', v)} placeholder="Все территории" loading={filtersLoading} />
         <MultiSelect label="ДГ" options={options.дг} value={filters.дг}
-          onChange={v => set('дг', v)} placeholder="Все ДГ" />
+          onChange={v => set('дг', v)} placeholder="Все ДГ" loading={filtersLoading} />
         <MultiSelect label="КРМ" options={options.крм} value={filters.крм}
-          onChange={v => set('крм', v)} placeholder="Все КРМ" />
+          onChange={v => set('крм', v)} placeholder="Все КРМ" loading={filtersLoading} />
         <MultiSelect label="КРП" options={options.крп} value={filters.крп}
-          onChange={v => set('крп', v)} placeholder="Все КРП" />
+          onChange={v => set('крп', v)} placeholder="Все КРП" loading={filtersLoading} />
       </div>
 
       {/* Action bar */}

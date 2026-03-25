@@ -8,7 +8,9 @@ import ReportTable from '@/components/ReportTable';
 import AgentInput, { AgentQueryResult } from '@/components/AgentInput';
 import DataTable from '@/components/DataTable';
 import VersionTabs from '@/components/VersionTabs';
+import DbStatus from '@/components/DbStatus';
 import { DEFAULT_COLUMNS } from '@/lib/report-columns';
+import { BASE_PATH } from '@/lib/constants';
 
 type Tab = 'ai' | 'manual';
 
@@ -43,7 +45,7 @@ export default function ReportsPage() {
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
     агенты: [], регионы: [], видыДоговора: [], территории: [], дг: [], крм: [], крп: [],
   });
-  const [dbError, setDbError] = useState<string | null>(null);
+  const [filtersLoading, setFiltersLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // AI state — versioned
@@ -65,10 +67,11 @@ export default function ReportsPage() {
   const [pageSize, setPageSize] = useState(100);
 
   useEffect(() => {
-    fetch('/api/report/filters')
+    fetch(`${BASE_PATH}/api/report/filters`)
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then(setFilterOptions)
-      .catch(() => setDbError('База данных недоступна — фильтры не загружены.'));
+      .catch(() => { /* handled by DbStatus indicator */ })
+      .finally(() => setFiltersLoading(false));
   }, []);
 
   /* ── Manual report ──────────────────────────────────────────────── */
@@ -79,7 +82,7 @@ export default function ReportsPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/report', {
+      const res = await fetch(`${BASE_PATH}/api/report`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...f, columns: cols, page: pg, pageSize: ps }),
@@ -121,7 +124,7 @@ export default function ReportsPage() {
     setExportingVersionId(version.id);
     setError(null);
     try {
-      const res = await fetch('/api/query/export', {
+      const res = await fetch(`${BASE_PATH}/api/query/export`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sql: version.result.sql }),
@@ -141,7 +144,7 @@ export default function ReportsPage() {
     setExporting(true);
     setError(null);
     try {
-      const res = await fetch('/api/report/export', {
+      const res = await fetch(`${BASE_PATH}/api/report/export`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...filters, columns: selectedColumns }),
@@ -160,11 +163,26 @@ export default function ReportsPage() {
       {/* ── Header ─────────────────────────────────────────────────── */}
       <header className="bg-white border-b border-gray-200">
         <div className="max-w-screen-2xl mx-auto px-4 sm:px-6">
-          <div className="flex items-center justify-between h-14">
-            <h1 className="text-base font-bold text-gray-900 tracking-tight">osago</h1>
+          <div className="relative flex items-center justify-between h-14">
+            {/* Brand + DB status */}
+            <div className="flex items-center gap-3 z-10">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-600 to-indigo-600 flex items-center justify-center">
+                  <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                  </svg>
+                </div>
+                <h1 className="text-sm font-bold text-gray-900 tracking-tight">
+                  Умный Аналитик
+                </h1>
+              </div>
+              <div className="hidden sm:block w-px h-5 bg-gray-200" />
+              <DbStatus />
+            </div>
 
-            {/* Tabs */}
-            <nav className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+            {/* Tabs — absolutely centered */}
+            <nav className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
               <TabButton active={tab === 'ai'} onClick={() => setTab('ai')} icon={<AiIcon />}>
                 AI-аналитик
               </TabButton>
@@ -193,15 +211,6 @@ export default function ReportsPage() {
           </div>
         </div>
       </header>
-
-      {/* ── DB error ───────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {dbError && (
-          <motion.div {...fadeSlide} className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 text-center text-sm text-amber-800">
-            {dbError}
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* ── Main ───────────────────────────────────────────────────── */}
       <main className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-6">
@@ -256,14 +265,14 @@ export default function ReportsPage() {
               {versions.length === 0 && (
                 <EmptyState
                   title="Спросите у AI-аналитика"
-                  subtitle="Опишите нужный отчёт на естественном языке — агент напишет SQL, проверит его и покажет результат"
+                  subtitle="Опишите нужный отчёт на естественном языке — AI построит его автоматически"
                 />
               )}
             </motion.div>
           ) : (
             <motion.div key="manual" {...fadeSlide} className="flex flex-col gap-4">
               <ReportFilters filters={filters} options={filterOptions} loading={loading}
-                onFiltersChange={setFilters} onSubmit={handleSubmit} />
+                filtersLoading={filtersLoading} onFiltersChange={setFilters} onSubmit={handleSubmit} />
               <ColumnSelector selected={selectedColumns} onChange={setSelectedColumns} />
 
               <AnimatePresence>

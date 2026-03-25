@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import type { AgentResponse } from '@/app/api/agent/route';
 import type { QueryResult } from '@/app/api/query/route';
 import SqlHighlight from './SqlHighlight';
+import { BASE_PATH } from '@/lib/constants';
 
 const MAX_RETRIES = 2;
 
@@ -55,7 +56,7 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
         : `Исправляю ошибку (${retryCount}/${MAX_RETRIES})…`
     );
 
-    const agentRes = await fetch('/api/agent', {
+    const agentRes = await fetch(`${BASE_PATH}/api/agent`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query: text, previousSql: prevSql, retryError }),
     });
@@ -68,7 +69,7 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
     setSkillRounds(agentData._skillRounds ?? 0);
 
     setPhase('validating');
-    const queryRes = await fetch('/api/query', {
+    const queryRes = await fetch(`${BASE_PATH}/api/query`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sql: agentData.sql }),
     });
@@ -102,7 +103,6 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
     if (!text.trim() || isRunning || disabled) return;
     setError(null);
     setRetryInfo(null);
-    setShowSql(false);
 
     // Don't reset explanation/sql if we're iterating — feels smoother
     if (!prevSql) {
@@ -248,43 +248,39 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
               </div>
             </div>
 
-            {/* SQL toggle + suggestions */}
-            <div className="px-4 py-3 flex flex-col gap-3">
-              {lastSql && (
-                <div>
-                  <button type="button" onClick={() => setShowSql(s => !s)}
-                    className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors">
-                    <svg className={`w-3 h-3 transition-transform ${showSql ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                    {showSql ? 'Скрыть SQL' : 'Показать SQL-запрос'}
-                  </button>
-                  <AnimatePresence>
-                    {showSql && (
-                      <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.15 }}
-                        className="overflow-hidden mt-2">
-                        <SqlHighlight sql={lastSql} />
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+            {/* Suggestions */}
+            {suggestions.length > 0 && (
+              <div className="px-4 py-3">
+                <p className="text-xs text-gray-400 mb-2">Продолжить работу с текущим отчётом:</p>
+                <div className="flex flex-col gap-1.5">
+                  {suggestions.map(s => (
+                    <button key={s} type="button" onClick={() => handleSuggestion(s)} disabled={isRunning}
+                      title={s}
+                      className="text-left text-xs text-purple-700 bg-purple-50 border border-purple-200 rounded-lg px-3 py-2 hover:bg-purple-100 transition-colors disabled:opacity-50">
+                      <span className="text-purple-400 mr-1">+</span> {s}
+                    </button>
+                  ))}
                 </div>
-              )}
+              </div>
+            )}
 
-              {suggestions.length > 0 && (
-                <div>
-                  <p className="text-xs text-gray-400 mb-2">Продолжить работу с текущим отчётом:</p>
-                  <div className="flex flex-col gap-1.5">
-                    {suggestions.map(s => (
-                      <button key={s} type="button" onClick={() => handleSuggestion(s)} disabled={isRunning}
-                        title={s}
-                        className="text-left text-xs text-purple-700 bg-purple-50 border border-purple-200 rounded-lg px-3 py-2 hover:bg-purple-100 transition-colors disabled:opacity-50">
-                        <span className="text-purple-400 mr-1">+</span> {s}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+            {/* SQL (subtle) */}
+            {lastSql && (
+              <div className="px-4 py-2 border-t border-gray-100">
+                <button type="button" onClick={() => setShowSql(s => !s)}
+                  className="text-[11px] text-gray-400 hover:text-gray-500 transition-colors">
+                  {showSql ? 'Скрыть SQL' : 'SQL'}
+                </button>
+                <AnimatePresence>
+                  {showSql && (
+                    <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.15 }}
+                      className="overflow-hidden mt-2">
+                      <SqlHighlight sql={lastSql} />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
