@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AGENT_TOOLS, executeSkill, getInstructionsBlock } from '@/lib/skills/registry';
 
+export const dynamic = 'force-dynamic';
+export const maxDuration = 120; // seconds — agent does multiple LLM roundtrips
+
 export interface AgentResponse {
   sql: string;
   explanation: string;
@@ -247,6 +250,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'OPENROUTER_API_KEY не настроен' }, { status: 500 });
   }
 
+  const startTime = Date.now();
+  console.log('[Agent] Request started');
+
   try {
     const body = await request.json() as {
       query: string;
@@ -328,6 +334,7 @@ ${previousSql}
           const parsed: AgentResponse = JSON.parse(jsonStr);
           if (parsed.sql?.trim()) {
             parsed._skillRounds = skillRounds;
+            console.log(`[Agent] Done in ${((Date.now() - startTime) / 1000).toFixed(1)}s, rounds=${skillRounds}`);
             return NextResponse.json(parsed);
           }
         }
@@ -368,9 +375,10 @@ ${previousSql}
     }
 
     parsed._skillRounds = skillRounds;
+    console.log(`[Agent] Done (final) in ${((Date.now() - startTime) / 1000).toFixed(1)}s, rounds=${skillRounds}`);
     return NextResponse.json(parsed);
   } catch (err) {
-    console.error('Agent route error:', err);
+    console.error(`[Agent] Error after ${((Date.now() - startTime) / 1000).toFixed(1)}s:`, err);
     const message = err instanceof Error ? err.message : 'Внутренняя ошибка сервера';
     return NextResponse.json({ error: message }, { status: 500 });
   }
