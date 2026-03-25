@@ -21,7 +21,34 @@ let pool: sql.ConnectionPool | null = null;
 
 export async function getPool(): Promise<sql.ConnectionPool> {
   if (!pool) {
-    pool = await new sql.ConnectionPool(config).connect();
+    try {
+      console.log('Attempting to connect to database with config:', {
+        server: config.server,
+        database: config.database,
+        user: config.user,
+        port: config.port,
+        options: config.options,
+        // intentionally omitting password
+      });
+      const newPool = new sql.ConnectionPool(config);
+      
+      newPool.on('error', (err) => {
+        console.error('SQL Pool Error:', err);
+      });
+
+      pool = await newPool.connect();
+      console.log('Successfully connected to database.');
+    } catch (error) {
+      console.error('Failed to connect to database. Error details:', error);
+      console.error('Connection config was:', {
+        server: config.server,
+        database: config.database,
+        user: config.user,
+        port: config.port,
+        options: config.options,
+      });
+      throw error; // Rethrow to let the caller handle it (or fail)
+    }
   }
   return pool;
 }
