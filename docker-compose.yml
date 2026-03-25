@@ -1,0 +1,22 @@
+services:
+  constructor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3400:3000"
+    environment:
+      # Database
+      DB_SERVER: ${DB_SERVER}
+      DB_DATABASE: ${DB_DATABASE}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_PORT: ${DB_PORT:-1433}
+      DB_ENCRYPT: ${DB_ENCRYPT:-false}
+      DB_TRUST_CERT: ${DB_TRUST_CERT:-true}
+      # AI
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL}
+      # App
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3400/constructor}
+    restart: unless-stopped
