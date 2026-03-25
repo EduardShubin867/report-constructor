@@ -2,12 +2,29 @@
 
 import { useState, useRef, KeyboardEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import type { AgentResponse } from '@/app/api/agent/route';
+import type { AgentResponse, SSEEvent } from '@/app/api/agent/route';
 import type { QueryResult } from '@/app/api/query/route';
 import SqlHighlight from './SqlHighlight';
 import { BASE_PATH } from '@/lib/constants';
 
 const MAX_RETRIES = 2;
+
+/* Human-readable labels for agent skills */
+const SKILL_LABELS: Record<string, string> = {
+  lookup_dg: 'Поиск ДГ',
+  lookup_territory: 'Поиск территории',
+  list_column_values: 'Просмотр значений колонки',
+  get_krm_krp_values: 'Загрузка КРМ/КРП',
+  validate_query: 'Проверка запроса',
+  read_instruction: 'Чтение инструкции',
+};
+
+interface ActivityEntry {
+  id: number;
+  label: string;
+  detail?: string;
+  status: 'active' | 'done';
+}
 
 const EXAMPLE_QUERIES = [
   'Количество договоров и сумма премий по каждому агенту за прошлый месяц',
@@ -41,27 +58,116 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
   const [explanation, setExplanation] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSql, setShowSql] = useState(false);
-  const [retryInfo, setRetryInfo] = useState<string | null>(null);
   const [skillRounds, setSkillRounds] = useState(0);
+  const [activityLog, setActivityLog] = useState<ActivityEntry[]>([]);
+  const activityIdRef = useRef(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const isRunning = phase === 'thinking' || phase === 'validating' || phase === 'retrying' || phase === 'self-checking';
   const isIterating = !!lastSql && phase === 'done';
 
-  async function _run(text: string, prevSql: string | undefined, retryCount: number, retryError?: string): Promise<void> {
-    setPhase(retryCount > 0 ? 'retrying' : 'thinking');
-    if (retryCount > 0) setRetryInfo(
-      retryError?.startsWith('EMPTY:')
-        ? `Запрос вернул 0 строк — корректирую (${retryCount}/${MAX_RETRIES})…`
-        : `Исправляю ошибку (${retryCount}/${MAX_RETRIES})…`
-    );
-
-    const agentRes = await fetch(`${BASE_PATH}/api/agent`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+  /** Read SSE stream from /api/agent and return the AgentResponse */
+  async function _callAgent(text: string, prevSql: string | undefined, retryError?: string): Promise<AgentResponse> {
+    const res = await fetch(`${BASE_PATH}/api/agent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query: text, previousSql: prevSql, retryError }),
     });
-    const agentData: AgentResponse & { error?: string } = await agentRes.json();
-    if (!agentRes.ok) throw new Error(agentData.error ?? 'Ошибка AI-сервиса');
+
+    if (!res.ok) {
+      // Non-streaming error (e.g. 400/500 before stream starts)
+      const errData = await res.json().catch(() => null);
+      throw new Error(errData?.error ?? `HTTP ${res.status}`);
+    }
+
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error('Streaming не поддерживается');
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let result: AgentResponse | null = null;
+    let streamError: string | null = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      // Parse SSE lines
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? ''; // keep incomplete line in buffer
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const jsonStr = line.slice(6);
+        if (!jsonStr) continue;
+
+        let event: SSEEvent;
+        try { event = JSON.parse(jsonStr); } catch { continue; }
+
+        switch (event.type) {
+          case 'phase':
+            if (event.phase === 'thinking') {
+              setPhase('thinking');
+              const id = ++activityIdRef.current;
+              setActivityLog(prev => {
+                const updated = prev.map(e => e.status === 'active' ? { ...e, status: 'done' as const } : e);
+                return [...updated, { id, label: 'Анализ запроса', status: 'active' }];
+              });
+            } else if (event.phase === 'finalizing') {
+              const id = ++activityIdRef.current;
+              setActivityLog(prev => {
+                const updated = prev.map(e => e.status === 'active' ? { ...e, status: 'done' as const } : e);
+                return [...updated, { id, label: 'Формирование ответа', status: 'active' }];
+              });
+            }
+            break;
+          case 'skill': {
+            const id = ++activityIdRef.current;
+            const label = SKILL_LABELS[event.name] ?? event.name;
+            // Extract a short detail from args
+            const argVals = Object.values(event.args);
+            const detail = argVals.length > 0 ? String(argVals[0]).slice(0, 60) : undefined;
+            setActivityLog(prev => {
+              const updated = prev.map(e => e.status === 'active' ? { ...e, status: 'done' as const } : e);
+              return [...updated, { id, label, detail, status: 'active' }];
+            });
+            break;
+          }
+          case 'result':
+            result = event.data;
+            setActivityLog(prev => prev.map(e => e.status === 'active' ? { ...e, status: 'done' as const } : e));
+            break;
+          case 'error':
+            streamError = event.error;
+            break;
+        }
+      }
+    }
+
+    if (streamError) throw new Error(streamError);
+    if (!result) throw new Error('Стрим завершился без результата');
+    return result;
+  }
+
+  async function _run(text: string, prevSql: string | undefined, retryCount: number, retryError?: string): Promise<void> {
+    if (retryCount > 0) {
+      setPhase('retrying');
+      const retryLabel = retryError?.startsWith('EMPTY:')
+        ? `Запрос вернул 0 строк — корректирую (${retryCount}/${MAX_RETRIES})`
+        : `Исправляю ошибку (${retryCount}/${MAX_RETRIES})`;
+
+      const id = ++activityIdRef.current;
+      setActivityLog(prev => {
+        const updated = prev.map(e => e.status === 'active' ? { ...e, status: 'done' as const } : e);
+        return [...updated, { id, label: retryLabel, status: 'active' }];
+      });
+    } else {
+      setPhase('thinking');
+    }
+
+    const agentData = await _callAgent(text, prevSql, retryError);
 
     setLastSql(agentData.sql);
     setExplanation(agentData.explanation);
@@ -69,6 +175,13 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
     setSkillRounds(agentData._skillRounds ?? 0);
 
     setPhase('validating');
+    {
+      const id = ++activityIdRef.current;
+      setActivityLog(prev => {
+        const updated = prev.map(e => e.status === 'active' ? { ...e, status: 'done' as const } : e);
+        return [...updated, { id, label: 'Выполнение запроса', status: 'active' }];
+      });
+    }
     const queryRes = await fetch(`${BASE_PATH}/api/query`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sql: agentData.sql }),
@@ -94,7 +207,8 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
       );
     }
 
-    setRetryInfo(null);
+
+    setActivityLog(prev => prev.map(e => e.status === 'active' ? { ...e, status: 'done' as const } : e));
     setPhase('done');
     onResult({ ...queryData, sql: agentData.sql, explanation: agentData.explanation, skillRounds: agentData._skillRounds }, text);
   }
@@ -102,7 +216,9 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
   async function runQuery(text: string, prevSql?: string) {
     if (!text.trim() || isRunning || disabled) return;
     setError(null);
-    setRetryInfo(null);
+
+    setActivityLog([]);
+    activityIdRef.current = 0;
 
     // Don't reset explanation/sql if we're iterating — feels smoother
     if (!prevSql) {
@@ -117,7 +233,7 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
 
   const handleSubmit = () => runQuery(query, lastSql ?? undefined);
   const handleSuggestion = (s: string) => { setQuery(s); runQuery(s, lastSql ?? undefined); };
-  const reset = () => { setPhase('idle'); setError(null); setRetryInfo(null); };
+  const reset = () => { setPhase('idle'); setError(null); setActivityLog([]); };
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleSubmit(); }
@@ -189,16 +305,40 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
           )}
         </AnimatePresence>
 
-        {/* Progress bar */}
+        {/* Live activity log */}
         <AnimatePresence>
-          {isRunning && (
-            <motion.div {...fade} className="mt-3">
-              <div className="flex items-center gap-2 text-xs text-gray-500">
-                <ProgressSteps phase={phase} retryInfo={retryInfo} />
-              </div>
-              <div className="mt-2 h-1 bg-gray-100 rounded-full overflow-hidden">
+          {isRunning && activityLog.length > 0 && (
+            <motion.div {...fade} className="mt-3 flex flex-col gap-1">
+              {activityLog.map(entry => (
                 <motion.div
-                  className={`h-full rounded-full ${phase === 'retrying' || phase === 'self-checking' ? 'bg-amber-500' : 'bg-purple-500'}`}
+                  key={entry.id}
+                  initial={{ opacity: 0, x: -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.15 }}
+                  className="flex items-center gap-2 text-xs"
+                >
+                  {entry.status === 'active' ? (
+                    <svg className="w-3 h-3 shrink-0 text-purple-500 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                  ) : (
+                    <svg className="w-3 h-3 shrink-0 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                  <span className={entry.status === 'active' ? 'text-purple-700 font-medium' : 'text-gray-400'}>
+                    {entry.label}
+                  </span>
+                  {entry.detail && (
+                    <span className="text-gray-300 truncate max-w-[200px]">{entry.detail}</span>
+                  )}
+                </motion.div>
+              ))}
+              {/* Progress bar */}
+              <div className="mt-1 h-0.5 bg-gray-100 rounded-full overflow-hidden">
+                <motion.div
+                  className={`h-full rounded-full ${phase === 'retrying' || phase === 'self-checking' ? 'bg-amber-400' : 'bg-purple-400'}`}
                   initial={{ width: '0%' }}
                   animate={{ width: phase === 'thinking' ? '40%' : phase === 'validating' ? '75%' : phase === 'self-checking' ? '85%' : '90%' }}
                   transition={{ duration: 0.8, ease: 'easeOut' }}
@@ -288,39 +428,3 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
   );
 }
 
-/* ───────────────── Progress steps ───────────────────────────────── */
-function ProgressSteps({ phase, retryInfo }: { phase: Phase; retryInfo: string | null }) {
-  const steps: { key: Phase; label: string }[] = [
-    { key: 'thinking', label: 'Генерация SQL' },
-    { key: 'validating', label: 'Проверка и выполнение' },
-  ];
-
-  if (phase === 'self-checking') {
-    steps.push({ key: 'self-checking', label: retryInfo ?? 'Самопроверка результата' });
-  } else if (phase === 'retrying') {
-    steps.push({ key: 'retrying', label: retryInfo ?? 'Исправление' });
-  }
-
-  return (
-    <div className="flex items-center gap-2">
-      {steps.map((step, i) => {
-        const isDone = steps.findIndex(s => s.key === phase) > i;
-        const isActive = step.key === phase;
-        return (
-          <div key={step.key} className="flex items-center gap-2">
-            {i > 0 && <div className="w-4 h-px bg-gray-300" />}
-            <div className="flex items-center gap-1">
-              <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8px] font-bold
-                ${isDone ? 'bg-emerald-500 text-white' : isActive ? ((phase === 'retrying' || phase === 'self-checking') ? 'bg-amber-500 text-white animate-pulse' : 'bg-purple-500 text-white animate-pulse') : 'bg-gray-200 text-gray-400'}`}>
-                {isDone ? '✓' : ''}
-              </div>
-              <span className={`${isDone ? 'text-emerald-600' : isActive ? ((phase === 'retrying' || phase === 'self-checking') ? 'text-amber-600 font-medium' : 'text-purple-600 font-medium') : 'text-gray-400'}`}>
-                {step.label}
-              </span>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}

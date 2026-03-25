@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { AGENT_TOOLS, executeSkill, getInstructionsBlock } from '@/lib/skills/registry';
 
 export const dynamic = 'force-dynamic';
@@ -12,6 +12,16 @@ export interface AgentResponse {
   /** How many tool-call rounds the agent went through (for debug) */
   _skillRounds?: number;
 }
+
+/* ────────────────────────────────────────────────────────────────────
+ * SSE event types sent to the client
+ * ──────────────────────────────────────────────────────────────────── */
+
+export type SSEEvent =
+  | { type: 'phase'; phase: string }
+  | { type: 'skill'; name: string; args: Record<string, unknown> }
+  | { type: 'result'; data: AgentResponse }
+  | { type: 'error'; error: string };
 
 /* ────────────────────────────────────────────────────────────────────
  * Schema description for the system prompt
@@ -239,7 +249,7 @@ async function callLLM(
 }
 
 /* ────────────────────────────────────────────────────────────────────
- * POST handler
+ * POST handler — SSE streaming to avoid load-balancer timeouts
  * ──────────────────────────────────────────────────────────────────── */
 
 const MAX_TOOL_ROUNDS = 5;
@@ -247,139 +257,142 @@ const MAX_TOOL_ROUNDS = 5;
 export async function POST(request: NextRequest) {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
-    return NextResponse.json({ error: 'OPENROUTER_API_KEY не настроен' }, { status: 500 });
+    return Response.json({ error: 'OPENROUTER_API_KEY не настроен' }, { status: 500 });
   }
 
-  const startTime = Date.now();
-  console.log('[Agent] Request started');
-
+  let body: { query: string; previousSql?: string; retryError?: string };
   try {
-    const body = await request.json() as {
-      query: string;
-      previousSql?: string;
-      retryError?: string;
-    };
-
-    const { query, previousSql, retryError } = body;
-    if (!query?.trim()) {
-      return NextResponse.json({ error: 'Запрос не может быть пустым' }, { status: 400 });
-    }
-
-    const today = new Date().toISOString().slice(0, 10);
-    const model = process.env.OPENROUTER_MODEL ?? 'google/gemini-2.0-flash-001';
-
-    // Build user message depending on mode
-    let userMessage: string;
-    if (retryError && previousSql) {
-      userMessage = `SQL-запрос вернул ошибку базы данных. Исправь его.
-
-Текущий SQL:
-${previousSql}
-
-Ошибка:
-${retryError}
-
-Верни исправленный SQL. Если ошибка связана с несуществующей колонкой/таблицей — установи canRetry: false.`;
-    } else if (previousSql) {
-      userMessage = `Пользователь хочет изменить существующий отчёт.
-
-Текущий SQL:
-${previousSql}
-
-Запрос пользователя: ${query}
-
-Если это доработка текущего отчёта — измени существующий SQL. Если принципиально новый — напиши с нуля.`;
-    } else {
-      userMessage = query;
-    }
-
-    // Build conversation
-    const messages: Message[] = [
-      { role: 'system', content: buildSystemPrompt(today) },
-      { role: 'user', content: userMessage },
-    ];
-
-    // Multi-turn loop: allow the model to call tools before generating SQL
-    let skillRounds = 0;
-
-    for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      const { message: assistantMsg, finishReason } = await callLLM(apiKey, model, messages, true);
-
-      // If the model returned tool calls — execute them and continue
-      if (assistantMsg.tool_calls?.length) {
-        skillRounds++;
-        messages.push(assistantMsg);
-
-        // Execute all tool calls (could be multiple in one round)
-        for (const tc of assistantMsg.tool_calls) {
-          let args: Record<string, unknown> = {};
-          try { args = JSON.parse(tc.function.arguments); } catch { /* noop */ }
-
-          console.log(`[Agent] Skill: ${tc.function.name}(${JSON.stringify(args)})`);
-          const result = await executeSkill(tc.function.name, args);
-
-          messages.push({
-            role: 'tool',
-            tool_call_id: tc.id,
-            content: result,
-          });
-        }
-        continue;
-      }
-
-      // Model returned content — check if it's our JSON response
-      if (assistantMsg.content) {
-        const jsonStr = extractJson(assistantMsg.content);
-        if (jsonStr) {
-          const parsed: AgentResponse = JSON.parse(jsonStr);
-          if (parsed.sql?.trim()) {
-            parsed._skillRounds = skillRounds;
-            console.log(`[Agent] Done in ${((Date.now() - startTime) / 1000).toFixed(1)}s, rounds=${skillRounds}`);
-            return NextResponse.json(parsed);
-          }
-        }
-      }
-
-      // If finish_reason is 'stop' but no valid JSON — model might have stopped without tools
-      // Try one more call without tools to force JSON output
-      if (finishReason === 'stop') {
-        break;
-      }
-    }
-
-    // Final call without tools — force JSON response
-    console.log(`[Agent] Final call (no tools), rounds=${skillRounds}`);
-
-    // Tell the model that tools are no longer available so it must return JSON now
-    messages.push({
-      role: 'user',
-      content:
-        'Инструменты больше недоступны. Верни финальный ответ в формате JSON с полями sql, explanation, suggestions. Используй ЛУЧШИЙ запрос из тех что ты уже проверил через validate_query. Если ни один запрос не вернул строки — верни наиболее вероятный вариант и укажи это в explanation.',
-    });
-
-    const { message: finalMsg } = await callLLM(apiKey, model, messages, false);
-
-    if (!finalMsg.content) {
-      return NextResponse.json({ error: 'Пустой ответ от модели' }, { status: 502 });
-    }
-
-    const jsonStr = extractJson(finalMsg.content);
-    if (!jsonStr) {
-      console.error('Failed to extract JSON:', finalMsg.content);
-      return NextResponse.json({ error: 'Не удалось разобрать ответ модели' }, { status: 502 });
-    }
-
-    const parsed: AgentResponse = JSON.parse(jsonStr);
-    if (!parsed.sql?.trim()) {
-      return NextResponse.json({ error: 'Модель не вернула SQL' }, { status: 502 });
-    }
-
-    parsed._skillRounds = skillRounds;
-    console.log(`[Agent] Done (final) in ${((Date.now() - startTime) / 1000).toFixed(1)}s, rounds=${skillRounds}`);
-    return NextResponse.json(parsed);
-  } catch (err) {
-    console.error(`[Agent] Error after ${((Date.now() - startTime) / 1000).toFixed(1)}s:`, err);
-    const message = err instanceof Error ? err.message : 'Внутренняя ошибка сервера';
-    return NextResponse.json({ error: message }, { status: 500 });
+    body = await request.json();
+  } catch {
+    return Response.json({ error: 'Invalid JSON' }, { status: 400 });
   }
+
+  const { query, previousSql, retryError } = body;
+  if (!query?.trim()) {
+    return Response.json({ error: 'Запрос не может быть пустым' }, { status: 400 });
+  }
+
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (event: SSEEvent) => {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+      };
+
+      const startTime = Date.now();
+      console.log('[Agent] SSE request started');
+
+      try {
+        const today = new Date().toISOString().slice(0, 10);
+        const model = process.env.OPENROUTER_MODEL ?? 'google/gemini-2.0-flash-001';
+
+        // Build user message depending on mode
+        let userMessage: string;
+        if (retryError && previousSql) {
+          userMessage = `SQL-запрос вернул ошибку базы данных. Исправь его.\n\nТекущий SQL:\n${previousSql}\n\nОшибка:\n${retryError}\n\nВерни исправленный SQL. Если ошибка связана с несуществующей колонкой/таблицей — установи canRetry: false.`;
+        } else if (previousSql) {
+          userMessage = `Пользователь хочет изменить существующий отчёт.\n\nТекущий SQL:\n${previousSql}\n\nЗапрос пользователя: ${query}\n\nЕсли это доработка текущего отчёта — измени существующий SQL. Если принципиально новый — напиши с нуля.`;
+        } else {
+          userMessage = query;
+        }
+
+        const messages: Message[] = [
+          { role: 'system', content: buildSystemPrompt(today) },
+          { role: 'user', content: userMessage },
+        ];
+
+        let skillRounds = 0;
+        send({ type: 'phase', phase: 'thinking' });
+
+        for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+          const { message: assistantMsg, finishReason } = await callLLM(apiKey, model, messages, true);
+
+          if (assistantMsg.tool_calls?.length) {
+            skillRounds++;
+            messages.push(assistantMsg);
+
+            for (const tc of assistantMsg.tool_calls) {
+              let args: Record<string, unknown> = {};
+              try { args = JSON.parse(tc.function.arguments); } catch { /* noop */ }
+
+              console.log(`[Agent] Skill: ${tc.function.name}(${JSON.stringify(args)})`);
+              send({ type: 'skill', name: tc.function.name, args });
+
+              const result = await executeSkill(tc.function.name, args);
+              messages.push({ role: 'tool', tool_call_id: tc.id, content: result });
+            }
+            continue;
+          }
+
+          if (assistantMsg.content) {
+            const jsonStr = extractJson(assistantMsg.content);
+            if (jsonStr) {
+              const parsed: AgentResponse = JSON.parse(jsonStr);
+              if (parsed.sql?.trim()) {
+                parsed._skillRounds = skillRounds;
+                console.log(`[Agent] Done in ${((Date.now() - startTime) / 1000).toFixed(1)}s, rounds=${skillRounds}`);
+                send({ type: 'result', data: parsed });
+                controller.close();
+                return;
+              }
+            }
+          }
+
+          if (finishReason === 'stop') break;
+        }
+
+        // Final call without tools
+        console.log(`[Agent] Final call (no tools), rounds=${skillRounds}`);
+        send({ type: 'phase', phase: 'finalizing' });
+
+        messages.push({
+          role: 'user',
+          content:
+            'Инструменты больше недоступны. Верни финальный ответ в формате JSON с полями sql, explanation, suggestions. Используй ЛУЧШИЙ запрос из тех что ты уже проверил через validate_query. Если ни один запрос не вернул строки — верни наиболее вероятный вариант и укажи это в explanation.',
+        });
+
+        const { message: finalMsg } = await callLLM(apiKey, model, messages, false);
+
+        if (!finalMsg.content) {
+          send({ type: 'error', error: 'Пустой ответ от модели' });
+          controller.close();
+          return;
+        }
+
+        const jsonStr = extractJson(finalMsg.content);
+        if (!jsonStr) {
+          console.error('Failed to extract JSON:', finalMsg.content);
+          send({ type: 'error', error: 'Не удалось разобрать ответ модели' });
+          controller.close();
+          return;
+        }
+
+        const parsed: AgentResponse = JSON.parse(jsonStr);
+        if (!parsed.sql?.trim()) {
+          send({ type: 'error', error: 'Модель не вернула SQL' });
+          controller.close();
+          return;
+        }
+
+        parsed._skillRounds = skillRounds;
+        console.log(`[Agent] Done (final) in ${((Date.now() - startTime) / 1000).toFixed(1)}s, rounds=${skillRounds}`);
+        send({ type: 'result', data: parsed });
+        controller.close();
+      } catch (err) {
+        console.error(`[Agent] Error after ${((Date.now() - startTime) / 1000).toFixed(1)}s:`, err);
+        const message = err instanceof Error ? err.message : 'Внутренняя ошибка сервера';
+        send({ type: 'error', error: message });
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no', // disable nginx buffering
+    },
+  });
 }
