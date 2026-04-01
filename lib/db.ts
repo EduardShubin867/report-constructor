@@ -1,56 +1,133 @@
 import sql from 'mssql';
+import type { StoredConnection } from './schema/types';
 
-const config: sql.config = {
-  server: process.env.DB_SERVER!,
-  database: process.env.DB_DATABASE ?? 'ExportUCS',
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  port: parseInt(process.env.DB_PORT ?? '1433', 10),
-  options: {
-    encrypt: process.env.DB_ENCRYPT === 'true',
-    trustServerCertificate: process.env.DB_TRUST_CERT !== 'false',
-  },
-  pool: {
-    max: 10,
-    min: 0,
-    idleTimeoutMillis: 30000,
-  },
-};
+function buildConfig(conn: StoredConnection, database: string): sql.config {
+  return {
+    server: conn.server,
+    database,
+    user: conn.user,
+    password: conn.password,
+    port: conn.port ?? 1433,
+    options: {
+      encrypt: conn.encrypt ?? false,
+      trustServerCertificate: conn.trustServerCertificate ?? true,
+    },
+    pool: { max: 10, min: 0, idleTimeoutMillis: 30000 },
+  };
+}
 
-let pool: sql.ConnectionPool | null = null;
+function buildDefaultConfig(): sql.config {
+  return {
+    server: process.env.DB_SERVER!,
+    database: process.env.DB_DATABASE ?? 'ExportUCS',
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    port: parseInt(process.env.DB_PORT ?? '1433', 10),
+    options: {
+      encrypt: process.env.DB_ENCRYPT === 'true',
+      trustServerCertificate: process.env.DB_TRUST_CERT !== 'false',
+    },
+    pool: { max: 10, min: 0, idleTimeoutMillis: 30000 },
+  };
+}
 
-export async function getPool(): Promise<sql.ConnectionPool> {
-  if (!pool) {
-    try {
-      console.log('Attempting to connect to database with config:', {
-        server: config.server,
-        database: config.database,
-        user: config.user,
-        port: config.port,
-        options: config.options,
-        // intentionally omitting password
-      });
-      const newPool = new sql.ConnectionPool(config);
-      
-      newPool.on('error', (err) => {
-        console.error('SQL Pool Error:', err);
-      });
+// ── Multi-pool registry ──────────────────────────────────────────────────────
+// Pool key = 'default' for the .env pool, or `${connectionId}:${database}` for
+// named connections. This lets multiple DataSources on the same server but
+// different databases each get their own pool while sharing credentials.
 
-      pool = await newPool.connect();
-      console.log('Successfully connected to database.');
-    } catch (error) {
-      console.error('Failed to connect to database. Error details:', error);
-      console.error('Connection config was:', {
-        server: config.server,
-        database: config.database,
-        user: config.user,
-        port: config.port,
-        options: config.options,
-      });
-      throw error; // Rethrow to let the caller handle it (or fail)
+const pools = new Map<string, sql.ConnectionPool>();
+
+async function createPool(key: string, config: sql.config): Promise<sql.ConnectionPool> {
+  console.log(`Connecting pool [${key}] to`, { server: config.server, database: config.database, user: config.user, port: config.port });
+  const p = new sql.ConnectionPool(config);
+  p.on('error', err => console.error(`SQL Pool [${key}] error:`, err));
+  const connected = await p.connect();
+  pools.set(key, connected);
+  console.log(`Pool [${key}] connected.`);
+  return connected;
+}
+
+/**
+ * Get (or create) a pool for a named connection + database pair.
+ *
+ * - No conn → default .env pool (key: 'default')
+ * - conn + database → named pool (key: `${connectionId}:${database}`)
+ *
+ * Two DataSources on the same server + database share one pool.
+ * Two DataSources on the same server but different databases get separate pools.
+ */
+export async function getPoolForConnection(
+  connectionId?: string,
+  conn?: StoredConnection,
+  database?: string,
+): Promise<sql.ConnectionPool> {
+  if (!conn || !connectionId || !database) {
+    const existing = pools.get('default');
+    if (existing?.connected) return existing;
+    return createPool('default', buildDefaultConfig());
+  }
+
+  const key = `${connectionId}:${database}`;
+  const existing = pools.get(key);
+  if (existing?.connected) return existing;
+  return createPool(key, buildConfig(conn, database));
+}
+
+/**
+ * Close all pools associated with a connectionId (call on connection deletion).
+ * Closes every pool keyed `${connectionId}:*`.
+ */
+export async function closePoolsForConnection(connectionId: string): Promise<void> {
+  const prefix = `${connectionId}:`;
+  for (const [key, pool] of pools.entries()) {
+    if (key.startsWith(prefix)) {
+      await pool.close().catch(() => {});
+      pools.delete(key);
+      console.log(`Pool [${key}] closed.`);
     }
   }
-  return pool;
+}
+
+/** Default pool — backward compat for existing call sites */
+export async function getPool(): Promise<sql.ConnectionPool> {
+  return getPoolForConnection();
+}
+
+// ── Query timeout helpers ────────────────────────────────────────────────────
+
+export const TIMEOUT = {
+  HEALTH: 5_000,
+  SKILL: 10_000,
+  QUERY: 15_000,
+  REPORT: 30_000,
+  EXPORT: 60_000,
+} as const;
+
+export class QueryTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`Query timed out after ${timeoutMs}ms`);
+    this.name = 'QueryTimeoutError';
+  }
+}
+
+export async function queryWithTimeout(
+  request: sql.Request,
+  sqlText: string,
+  timeoutMs: number,
+): Promise<sql.IResult<Record<string, unknown>>> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      request.cancel();
+      reject(new QueryTimeoutError(timeoutMs));
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([request.query(sqlText), timeoutPromise]);
+  } finally {
+    clearTimeout(timer!);
+  }
 }
 
 export { sql };

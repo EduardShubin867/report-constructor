@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPool } from '@/lib/db';
+import { getPool, queryWithTimeout, TIMEOUT } from '@/lib/db';
 import { ALL_COLUMNS } from '@/lib/report-columns';
 import { buildWhere, buildSelectAndJoins, safeColumns, type ReportFilters } from '@/lib/query-builder';
 import ExcelJS from 'exceljs';
@@ -17,12 +17,13 @@ export async function POST(request: NextRequest) {
     const dataReq = pool.request();
     const where = buildWhere(dataReq, body);
 
-    const result = await dataReq.query(
+    const result = await queryWithTimeout(dataReq,
       `SELECT ${select}
        FROM [dbo].[Журнал_ОСАГО_Маржа] m
        ${joins}
        ${where}
-       ORDER BY m.[ДатаЗаключения] DESC`
+       ORDER BY m.[ДатаЗаключения] DESC`,
+      TIMEOUT.EXPORT,
     );
 
     const colDefs = cols.map(key => ALL_COLUMNS.find(c => c.key === key)!).filter(Boolean);

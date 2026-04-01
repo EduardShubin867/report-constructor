@@ -183,11 +183,13 @@ export default function ReportsPage() {
 
             {/* Tabs — absolutely centered */}
             <nav className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
-              <TabButton active={tab === 'ai'} onClick={() => setTab('ai')} icon={<AiIcon />}>
-                AI-аналитик
+              <TabButton active={tab === 'ai'} onClick={() => setTab('ai')} icon={<AiIcon />}
+                tooltip="Опишите что нужно словами — AI построит отчёт">
+                Свободный запрос
               </TabButton>
-              <TabButton active={tab === 'manual'} onClick={() => setTab('manual')} icon={<FilterIcon />}>
-                Ручной отчёт
+              <TabButton active={tab === 'manual'} onClick={() => setTab('manual')} icon={<FilterIcon />}
+                tooltip="Выберите фильтры и колонки вручную">
+                Конструктор
               </TabButton>
             </nav>
 
@@ -222,32 +224,37 @@ export default function ReportsPage() {
               <AnimatePresence>
                 {versions.length > 0 && activeVersion && (
                   <motion.div {...fadeSlide} className="flex flex-col gap-3">
-                    {/* Version tabs + export toolbar */}
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        {versions.length > 1 && (
-                          <VersionTabs
-                            versions={versions}
-                            activeIdx={activeVersionIdx}
-                            onSelect={setActiveVersionIdx}
+                    {/* Result header: version tabs + row count + export */}
+                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          {versions.length > 1 ? (
+                            <VersionTabs
+                              versions={versions}
+                              activeIdx={activeVersionIdx}
+                              onSelect={setActiveVersionIdx}
+                            />
+                          ) : (
+                            <span className="text-xs text-gray-400">v1</span>
+                          )}
+                          <div className="w-px h-4 bg-gray-200" />
+                          <span className="text-xs text-gray-500 font-medium">
+                            {activeVersion.result.rowCount.toLocaleString('ru-RU')} {pluralRows(activeVersion.result.rowCount)}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs text-gray-400">
+                            {new Date(activeVersion.timestamp).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          <ExportButton
+                            loading={exportingVersionId === activeVersion.id}
+                            onClick={() => handleExportVersion(activeVersion)}
                           />
-                        )}
-                        {versions.length === 1 && (
-                          <span className="text-xs text-gray-400">v1</span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs text-gray-400">
-                          {new Date(activeVersion.timestamp).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                        <ExportButton
-                          loading={exportingVersionId === activeVersion.id}
-                          onClick={() => handleExportVersion(activeVersion)}
-                        />
+                        </div>
                       </div>
                     </div>
 
-                    {/* Table */}
+                    {/* Data table */}
                     <AnimatePresence mode="wait">
                       <motion.div key={activeVersion.id} {...fadeSlide}>
                         <DataTable
@@ -261,13 +268,6 @@ export default function ReportsPage() {
                   </motion.div>
                 )}
               </AnimatePresence>
-
-              {versions.length === 0 && (
-                <EmptyState
-                  title="Спросите у AI-аналитика"
-                  subtitle="Опишите нужный отчёт на естественном языке — AI построит его автоматически"
-                />
-              )}
             </motion.div>
           ) : (
             <motion.div key="manual" {...fadeSlide} className="flex flex-col gap-4">
@@ -307,11 +307,11 @@ export default function ReportsPage() {
 
 /* ───────────────── Shared small components ─────────────────────── */
 
-function TabButton({ active, onClick, icon, children }: {
-  active: boolean; onClick: () => void; icon: React.ReactNode; children: React.ReactNode;
+function TabButton({ active, onClick, icon, tooltip, children }: {
+  active: boolean; onClick: () => void; icon: React.ReactNode; tooltip?: string; children: React.ReactNode;
 }) {
   return (
-    <button type="button" onClick={onClick}
+    <button type="button" onClick={onClick} title={tooltip}
       className={`relative flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-200
         ${active
           ? 'bg-white text-gray-900 shadow-sm'
@@ -320,6 +320,14 @@ function TabButton({ active, onClick, icon, children }: {
       {children}
     </button>
   );
+}
+
+function pluralRows(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'строка';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'строки';
+  return 'строк';
 }
 
 function ExportButton({ loading, onClick }: { loading: boolean; onClick: () => void }) {

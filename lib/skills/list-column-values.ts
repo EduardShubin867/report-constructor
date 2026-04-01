@@ -1,12 +1,6 @@
-import { getPool } from '../db';
+import { getPool, queryWithTimeout, TIMEOUT } from '../db';
+import { getFilterableColumns } from '../schema';
 import type { ToolSkill } from './types';
-
-const ALLOWED_COLUMNS = new Set([
-  'Агент', 'СубАгент', 'Регион', 'РегионФакт', 'Марка', 'Модель',
-  'ВидДоговора', 'КатегорияПолная', 'КатегорияСокращенная',
-  'ИсточникДокумента', 'ЦельИспользования', 'ТипТерритории',
-  'СтраховательЮрФизЛицо', 'СобственникТСЮрФизЛицо',
-]);
 
 const listColumnValues: ToolSkill = {
   kind: 'tool',
@@ -18,8 +12,7 @@ const listColumnValues: ToolSkill = {
     properties: {
       column: {
         type: 'string',
-        description: 'Имя колонки',
-        enum: [...ALLOWED_COLUMNS],
+        description: 'Имя filterable-колонки (строковые колонки: Агент, Марка, Регион, ВидДоговора и т.п.)',
       },
       search: {
         type: 'string',
@@ -35,8 +28,9 @@ const listColumnValues: ToolSkill = {
 
   async execute(args) {
     const column = String(args.column ?? '');
-    if (!ALLOWED_COLUMNS.has(column)) {
-      return `Колонка "${column}" не доступна. Доступные: ${[...ALLOWED_COLUMNS].join(', ')}`;
+    const allowed = getFilterableColumns();
+    if (!allowed.has(column)) {
+      return `Колонка "${column}" не доступна. Доступные: ${[...allowed].join(', ')}`;
     }
     const search = args.search ? String(args.search) : null;
     const limit = Math.min(Number(args.limit) || 20, 50);
@@ -49,12 +43,13 @@ const listColumnValues: ToolSkill = {
       where += ` AND [${column}] LIKE @search`;
     }
 
-    const result = await req.query(
+    const result = await queryWithTimeout(req,
       `SELECT TOP ${limit} [${column}] AS [value], COUNT(*) AS [count]
        FROM [dbo].[Журнал_ОСАГО_Маржа]
        ${where}
        GROUP BY [${column}]
        ORDER BY COUNT(*) DESC`,
+      TIMEOUT.SKILL,
     );
 
     if (result.recordset.length === 0)

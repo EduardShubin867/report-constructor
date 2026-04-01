@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPool, sql } from '@/lib/db';
+import { getPool, sql, queryWithTimeout, TIMEOUT } from '@/lib/db';
 import { buildWhere, buildSelectAndJoins, safeColumns, type ReportFilters } from '@/lib/query-builder';
 
 export type { ReportFilters };
@@ -21,10 +21,11 @@ export async function POST(request: NextRequest) {
     // COUNT (no JOINs needed — filters use subqueries)
     const countReq = pool.request();
     const where = buildWhere(countReq, body);
-    const countResult = await countReq.query<{ total: number }>(
-      `SELECT COUNT(*) AS total FROM [dbo].[Журнал_ОСАГО_Маржа] m ${where}`
+    const countResult = await queryWithTimeout(countReq,
+      `SELECT COUNT(*) AS total FROM [dbo].[Журнал_ОСАГО_Маржа] m ${where}`,
+      TIMEOUT.REPORT,
     );
-    const total = countResult.recordset[0].total;
+    const total = (countResult.recordset[0] as { total: number }).total;
 
     // DATA
     const { select, joins } = buildSelectAndJoins(cols);
@@ -33,13 +34,14 @@ export async function POST(request: NextRequest) {
     dataReq.input('offset', sql.Int, offset);
     dataReq.input('pageSize', sql.Int, pageSize);
 
-    const dataResult = await dataReq.query(
+    const dataResult = await queryWithTimeout(dataReq,
       `SELECT ${select}
        FROM [dbo].[Журнал_ОСАГО_Маржа] m
        ${joins}
        ${where}
        ORDER BY m.[ДатаЗаключения] DESC
-       OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY`
+       OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY`,
+      TIMEOUT.REPORT,
     );
 
     return NextResponse.json({ data: dataResult.recordset, total, page, pageSize });

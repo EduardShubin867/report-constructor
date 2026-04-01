@@ -37,6 +37,9 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 # Copy instruction markdown files (read at runtime by the skills registry)
 COPY --from=builder /app/lib/skills/instructions ./lib/skills/instructions
 
+# Create data directory for runtime storage (skills.json, connections.json, sources.json)
+RUN mkdir -p /app/data && chown nextjs:nodejs /app/data
+
 USER nextjs
 
 EXPOSE 3000

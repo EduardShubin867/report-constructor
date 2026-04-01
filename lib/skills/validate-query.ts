@@ -1,5 +1,6 @@
-import { getPool } from '../db';
+import { getPool, queryWithTimeout, TIMEOUT } from '../db';
 import { validateSql } from '../sql-validator';
+import { setCache } from '../query-cache';
 import type { ToolSkill } from './types';
 
 const validateQuery: ToolSkill = {
@@ -29,9 +30,15 @@ const validateQuery: ToolSkill = {
 
     try {
       const pool = await getPool();
-      const result = await pool.request().query(validation.sql);
-      const rows = result.recordset;
+      const result = await queryWithTimeout(pool.request(), validation.sql, TIMEOUT.QUERY);
+      const rows = result.recordset as Record<string, unknown>[];
       const count = rows.length;
+      const columns = count > 0 ? Object.keys(rows[0]) : [];
+
+      // Cache for /api/query to avoid re-executing the same SQL
+      if (count > 0) {
+        setCache(validation.sql, rows, columns);
+      }
 
       if (count === 0) {
         return 'Запрос вернул 0 строк. Если это первая проверка — попробуй исправить условия WHERE и вызови validate_query ещё раз. Если это вторая проверка — верни текущий SQL как есть и укажи в explanation что данные не найдены.';

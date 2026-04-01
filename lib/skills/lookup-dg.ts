@@ -1,4 +1,4 @@
-import { getPool } from '../db';
+import { getPool, queryWithTimeout, TIMEOUT } from '../db';
 import type { ToolSkill } from './types';
 
 const lookupDg: ToolSkill = {
@@ -22,15 +22,14 @@ const lookupDg: ToolSkill = {
     if (!search) return 'Не указана строка поиска для ДГ';
 
     const pool = await getPool();
-    const result = await pool
-      .request()
-      .input('search', `%${search}%`)
-      .query(
-        `SELECT TOP 15 Код, Наименование, ДатаСоздания
-         FROM [dbo].[ДГ]
-         WHERE Наименование LIKE @search
-         ORDER BY Наименование`,
-      );
+    const req = pool.request().input('search', `%${search}%`);
+    const result = await queryWithTimeout(req,
+      `SELECT TOP 15 Код, Наименование, ДатаСоздания
+       FROM [dbo].[ДГ]
+       WHERE Наименование LIKE @search
+       ORDER BY Наименование`,
+      TIMEOUT.SKILL,
+    );
 
     if (result.recordset.length === 0)
       return `Не найдено ДГ по запросу "${search}". Попробуй другой вариант написания — номер ДГ содержится в поле Наименование.`;

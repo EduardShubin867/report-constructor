@@ -1,4 +1,4 @@
-import { getPool } from '../db';
+import { getPool, queryWithTimeout, TIMEOUT } from '../db';
 import type { ToolSkill } from './types';
 
 const lookupTerritory: ToolSkill = {
@@ -22,15 +22,14 @@ const lookupTerritory: ToolSkill = {
     if (!search) return 'Не указана строка поиска для территории';
 
     const pool = await getPool();
-    const result = await pool
-      .request()
-      .input('search', `%${search}%`)
-      .query(
-        `SELECT TOP 15 ID, Наименование, Регион, КТ, ТипТерритории
-         FROM [dbo].[Территории]
-         WHERE Наименование LIKE @search
-         ORDER BY Наименование`,
-      );
+    const req = pool.request().input('search', `%${search}%`);
+    const result = await queryWithTimeout(req,
+      `SELECT TOP 15 ID, Наименование, Регион, КТ, ТипТерритории
+       FROM [dbo].[Территории]
+       WHERE Наименование LIKE @search
+       ORDER BY Наименование`,
+      TIMEOUT.SKILL,
+    );
 
     if (result.recordset.length === 0)
       return `Не найдено территорий по запросу "${search}". Попробуй другой запрос.`;

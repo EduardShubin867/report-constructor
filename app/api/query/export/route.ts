@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPool } from '@/lib/db';
+import { getPool, queryWithTimeout, TIMEOUT } from '@/lib/db';
 import { validateSql } from '@/lib/sql-validator';
 import ExcelJS from 'exceljs';
 
@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
     }
 
     const pool = await getPool();
-    const result = await pool.request().query(validation.sql);
+    const result = await queryWithTimeout(pool.request(), validation.sql, TIMEOUT.EXPORT);
 
     const rows: Record<string, unknown>[] = result.recordset;
     if (rows.length === 0) {

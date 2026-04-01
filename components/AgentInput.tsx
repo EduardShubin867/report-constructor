@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import type { AgentResponse, SSEEvent } from '@/app/api/agent/route';
 import type { QueryResult } from '@/app/api/query/route';
 import SqlHighlight from './SqlHighlight';
+import AgentStepper from './AgentStepper';
 import { BASE_PATH } from '@/lib/constants';
 
 const MAX_RETRIES = 2;
@@ -13,27 +14,21 @@ const MAX_RETRIES = 2;
 const SKILL_LABELS: Record<string, string> = {
   lookup_dg: 'Поиск ДГ',
   lookup_territory: 'Поиск территории',
-  list_column_values: 'Просмотр значений колонки',
+  list_column_values: 'Просмотр значений',
   get_krm_krp_values: 'Загрузка КРМ/КРП',
   validate_query: 'Проверка запроса',
   read_instruction: 'Чтение инструкции',
 };
 
-interface ActivityEntry {
-  id: number;
-  label: string;
-  detail?: string;
-  status: 'active' | 'done';
-}
-
-const EXAMPLE_QUERIES = [
-  'Количество договоров и сумма премий по каждому агенту за прошлый месяц',
-  'Динамика премий по месяцам за текущий год',
-  'Топ-20 агентов по заработанной марже',
-  'Данные по 150 ДГ за текущий год',
-  'Распределение договоров по территориям в Москве',
-  'Средний КБМ и тариф в разрезе марок автомобилей',
-];
+/* Detail messages for skills (user-friendly) */
+const SKILL_DETAILS: Record<string, (args: Record<string, unknown>) => string> = {
+  lookup_dg: (a) => `Ищу ДГ${a.query ? `: ${String(a.query).slice(0, 40)}` : ''}`,
+  lookup_territory: (a) => `Ищу территорию${a.query ? `: ${String(a.query).slice(0, 40)}` : ''}`,
+  list_column_values: (a) => `Просматриваю значения${a.column ? ` «${a.column}»` : ''}`,
+  get_krm_krp_values: () => 'Загружаю справочники КРМ/КРП',
+  validate_query: () => 'Проверяю корректность запроса',
+  read_instruction: (a) => `Читаю инструкцию${a.name ? `: ${a.name}` : ''}`,
+};
 
 export interface AgentQueryResult extends QueryResult {
   sql: string;
@@ -50,6 +45,112 @@ type Phase = 'idle' | 'thinking' | 'validating' | 'retrying' | 'self-checking' |
 
 const fade = { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -4 }, transition: { duration: 0.15 } };
 
+/* ── Example queries for welcome screen ────────────────────────── */
+const EXAMPLE_QUERIES = [
+  {
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-1.997M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+      </svg>
+    ),
+    title: 'Отчёт по агентам',
+    query: 'Количество договоров и сумма премий по каждому агенту за прошлый месяц',
+  },
+  {
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+      </svg>
+    ),
+    title: 'Динамика премий',
+    query: 'Динамика премий по месяцам за текущий год',
+  },
+  {
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 18.75h-9m9 0a3 3 0 013 3h-15a3 3 0 013-3m9 0v-3.375c0-.621-.503-1.125-1.125-1.125h-.871M7.5 18.75v-3.375c0-.621.504-1.125 1.125-1.125h.872m5.007 0H9.497m5.007 0a7.454 7.454 0 01-.982-3.172M9.497 14.25a7.454 7.454 0 00.981-3.172M5.25 4.236c-.982.143-1.954.317-2.916.52A6.003 6.003 0 007.73 9.728M5.25 4.236V4.5c0 2.108.966 3.99 2.48 5.228M5.25 4.236V2.721C7.456 2.41 9.71 2.25 12 2.25c2.291 0 4.545.16 6.75.47v1.516M18.75 4.236c.982.143 1.954.317 2.916.52A6.003 6.003 0 0016.27 9.728M18.75 4.236V4.5c0 2.108-.966 3.99-2.48 5.228m0 0a6.003 6.003 0 01-5.54 0" />
+      </svg>
+    ),
+    title: 'Топ агентов',
+    query: 'Топ-20 агентов по заработанной марже',
+  },
+  {
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+      </svg>
+    ),
+    title: 'По конкретному ДГ',
+    query: 'Данные по 150 ДГ за текущий год',
+  },
+  {
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+      </svg>
+    ),
+    title: 'По территориям',
+    query: 'Распределение договоров по территориям в Москве',
+  },
+  {
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 18.75a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 01-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h1.125c.621 0 1.125-.504 1.125-1.125v-3m0 0V6.375c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125" />
+      </svg>
+    ),
+    title: 'КБМ и тарифы',
+    query: 'Средний КБМ и тариф в разрезе марок автомобилей',
+  },
+];
+
+/* ── Stepper step definitions ──────────────────────────────────── */
+const STEPPER_STEPS = [
+  {
+    label: 'Анализ',
+    icon: (
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+      </svg>
+    ),
+  },
+  {
+    label: 'Уточнение',
+    icon: (
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+      </svg>
+    ),
+  },
+  {
+    label: 'Построение',
+    icon: (
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+      </svg>
+    ),
+  },
+  {
+    label: 'Выполнение',
+    icon: (
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+      </svg>
+    ),
+  },
+  {
+    label: 'Готово',
+    icon: (
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
+  },
+];
+
+/* Skills that map to step 1 (Уточнение) — i.e. data gathering tools */
+const DATA_SKILLS = new Set(['lookup_dg', 'lookup_territory', 'list_column_values', 'get_krm_krp_values', 'read_instruction']);
+
 export default function AgentInput({ onResult, disabled }: AgentInputProps) {
   const [query, setQuery] = useState('');
   const [phase, setPhase] = useState<Phase>('idle');
@@ -59,9 +160,14 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSql, setShowSql] = useState(false);
   const [skillRounds, setSkillRounds] = useState(0);
-  const [activityLog, setActivityLog] = useState<ActivityEntry[]>([]);
-  const activityIdRef = useRef(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  /* ── Stepper state ─────────────────────────────────────────────── */
+  const [activeStep, setActiveStep] = useState(0);
+  const [stepDetail, setStepDetail] = useState('');
+  const [isRetrying, setIsRetrying] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+  const [hadDataSkills, setHadDataSkills] = useState(false);
 
   const isRunning = phase === 'thinking' || phase === 'validating' || phase === 'retrying' || phase === 'self-checking';
   const isIterating = !!lastSql && phase === 'done';
@@ -75,7 +181,6 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
     });
 
     if (!res.ok) {
-      // Non-streaming error (e.g. 400/500 before stream starts)
       const errData = await res.json().catch(() => null);
       throw new Error(errData?.error ?? `HTTP ${res.status}`);
     }
@@ -94,9 +199,8 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
 
       buffer += decoder.decode(value, { stream: true });
 
-      // Parse SSE lines
       const lines = buffer.split('\n');
-      buffer = lines.pop() ?? ''; // keep incomplete line in buffer
+      buffer = lines.pop() ?? '';
 
       for (const line of lines) {
         if (!line.startsWith('data: ')) continue;
@@ -110,34 +214,30 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
           case 'phase':
             if (event.phase === 'thinking') {
               setPhase('thinking');
-              const id = ++activityIdRef.current;
-              setActivityLog(prev => {
-                const updated = prev.map(e => e.status === 'active' ? { ...e, status: 'done' as const } : e);
-                return [...updated, { id, label: 'Анализ запроса', status: 'active' }];
-              });
+              setActiveStep(0);
+              setStepDetail('Анализирую ваш запрос…');
             } else if (event.phase === 'finalizing') {
-              const id = ++activityIdRef.current;
-              setActivityLog(prev => {
-                const updated = prev.map(e => e.status === 'active' ? { ...e, status: 'done' as const } : e);
-                return [...updated, { id, label: 'Формирование ответа', status: 'active' }];
-              });
+              setActiveStep(2);
+              setStepDetail('Формирую SQL-запрос…');
             }
             break;
           case 'skill': {
-            const id = ++activityIdRef.current;
-            const label = SKILL_LABELS[event.name] ?? event.name;
-            // Extract a short detail from args
-            const argVals = Object.values(event.args);
-            const detail = argVals.length > 0 ? String(argVals[0]).slice(0, 60) : undefined;
-            setActivityLog(prev => {
-              const updated = prev.map(e => e.status === 'active' ? { ...e, status: 'done' as const } : e);
-              return [...updated, { id, label, detail, status: 'active' }];
-            });
+            const skillName = event.name;
+            const args = event.args as Record<string, unknown>;
+
+            if (DATA_SKILLS.has(skillName)) {
+              setHadDataSkills(true);
+              setActiveStep(1);
+              const detailFn = SKILL_DETAILS[skillName];
+              setStepDetail(detailFn ? detailFn(args) : SKILL_LABELS[skillName] ?? skillName);
+            } else if (skillName === 'validate_query') {
+              setActiveStep(2);
+              setStepDetail('Проверяю корректность запроса…');
+            }
             break;
           }
           case 'result':
-            result = event.data;
-            setActivityLog(prev => prev.map(e => e.status === 'active' ? { ...e, status: 'done' as const } : e));
+            result = event.data as unknown as AgentResponse;
             break;
           case 'error':
             streamError = event.error;
@@ -151,37 +251,42 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
     return result;
   }
 
-  async function _run(text: string, prevSql: string | undefined, retryCount: number, retryError?: string): Promise<void> {
-    if (retryCount > 0) {
+  async function _run(text: string, prevSql: string | undefined, retry: number, retryError?: string): Promise<void> {
+    if (retry > 0) {
       setPhase('retrying');
+      setIsRetrying(true);
+      setRetryCount(retry);
+      setActiveStep(0);
       const retryLabel = retryError?.startsWith('EMPTY:')
-        ? `Запрос вернул 0 строк — корректирую (${retryCount}/${MAX_RETRIES})`
-        : `Исправляю ошибку (${retryCount}/${MAX_RETRIES})`;
-
-      const id = ++activityIdRef.current;
-      setActivityLog(prev => {
-        const updated = prev.map(e => e.status === 'active' ? { ...e, status: 'done' as const } : e);
-        return [...updated, { id, label: retryLabel, status: 'active' }];
-      });
+        ? `Запрос вернул 0 строк — корректирую (${retry}/${MAX_RETRIES})`
+        : `Исправляю ошибку (${retry}/${MAX_RETRIES})`;
+      setStepDetail(retryLabel);
     } else {
       setPhase('thinking');
+      setIsRetrying(false);
+      setRetryCount(0);
     }
 
     const agentData = await _callAgent(text, prevSql, retryError);
 
-    setLastSql(agentData.sql);
+    setLastSql(agentData.sql || null);
     setExplanation(agentData.explanation);
     setSuggestions(agentData.suggestions ?? []);
     setSkillRounds(agentData._skillRounds ?? 0);
 
-    setPhase('validating');
-    {
-      const id = ++activityIdRef.current;
-      setActivityLog(prev => {
-        const updated = prev.map(e => e.status === 'active' ? { ...e, status: 'done' as const } : e);
-        return [...updated, { id, label: 'Выполнение запроса', status: 'active' }];
-      });
+    // Agent couldn't build SQL — show explanation only
+    if (!agentData.sql) {
+      setActiveStep(4);
+      setStepDetail('');
+      setPhase('done');
+      return;
     }
+
+    // Step 3: executing SQL
+    setPhase('validating');
+    setActiveStep(3);
+    setStepDetail('Выполняю запрос к базе данных…');
+
     const queryRes = await fetch(`${BASE_PATH}/api/query`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sql: agentData.sql }),
@@ -190,25 +295,26 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
 
     if (!queryRes.ok) {
       const execError = queryData.error ?? 'Ошибка выполнения запроса';
-      if (retryCount < MAX_RETRIES && agentData.canRetry !== false) {
-        return _run(text, agentData.sql, retryCount + 1, execError);
+      if (retry < MAX_RETRIES && agentData.canRetry !== false) {
+        return _run(text, agentData.sql, retry + 1, execError);
       }
       throw new Error(execError);
     }
 
-    // Self-validation: if query returned 0 rows, ask agent to fix it
-    if (queryData.rowCount === 0 && retryCount < MAX_RETRIES) {
+    // Self-validation: 0 rows → retry
+    if (queryData.rowCount === 0 && retry < MAX_RETRIES) {
       setPhase('self-checking');
       return _run(
         text,
         agentData.sql,
-        retryCount + 1,
+        retry + 1,
         'EMPTY: Запрос выполнился успешно, но вернул 0 строк. Вероятно, условия WHERE слишком жёсткие или значения фильтров неверны (неправильный код ДГ, формат даты, регистр). Проверь значения через скиллы и исправь запрос.',
       );
     }
 
-
-    setActivityLog(prev => prev.map(e => e.status === 'active' ? { ...e, status: 'done' as const } : e));
+    // Step 4: done
+    setActiveStep(4);
+    setStepDetail('');
     setPhase('done');
     onResult({ ...queryData, sql: agentData.sql, explanation: agentData.explanation, skillRounds: agentData._skillRounds }, text);
   }
@@ -216,11 +322,10 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
   async function runQuery(text: string, prevSql?: string) {
     if (!text.trim() || isRunning || disabled) return;
     setError(null);
+    setHadDataSkills(false);
+    setActiveStep(0);
+    setStepDetail('Анализирую ваш запрос…');
 
-    setActivityLog([]);
-    activityIdRef.current = 0;
-
-    // Don't reset explanation/sql if we're iterating — feels smoother
     if (!prevSql) {
       setLastSql(null);
       setExplanation(null);
@@ -233,7 +338,9 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
 
   const handleSubmit = () => runQuery(query, lastSql ?? undefined);
   const handleSuggestion = (s: string) => { setQuery(s); runQuery(s, lastSql ?? undefined); };
-  const reset = () => { setPhase('idle'); setError(null); setActivityLog([]); };
+  const handleExample = (q: string) => { setQuery(q); runQuery(q); };
+  const reset = () => { setPhase('idle'); setError(null); setActiveStep(0); setStepDetail(''); };
+  const showWelcome = !lastSql && phase === 'idle';
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleSubmit(); }
@@ -289,65 +396,57 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
           </button>
         </div>
 
-        {/* Examples (only before first result) */}
+        {/* ── Stepper (while running) ──────────────────────────────── */}
         <AnimatePresence>
-          {!lastSql && phase === 'idle' && (
-            <motion.div {...fade} className="flex flex-wrap gap-1.5 mt-3">
-              {EXAMPLE_QUERIES.map(q => (
-                <button key={q} type="button"
-                  onClick={() => { setQuery(q); textareaRef.current?.focus(); }}
-                  disabled={isRunning}
-                  className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-full px-2.5 py-1 hover:bg-gray-100 hover:text-gray-700 transition-colors disabled:opacity-50 truncate max-w-sm">
-                  {q}
-                </button>
-              ))}
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Live activity log */}
-        <AnimatePresence>
-          {isRunning && activityLog.length > 0 && (
-            <motion.div {...fade} className="mt-3 flex flex-col gap-1">
-              {activityLog.map(entry => (
-                <motion.div
-                  key={entry.id}
-                  initial={{ opacity: 0, x: -8 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.15 }}
-                  className="flex items-center gap-2 text-xs"
-                >
-                  {entry.status === 'active' ? (
-                    <svg className="w-3 h-3 shrink-0 text-purple-500 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                  ) : (
-                    <svg className="w-3 h-3 shrink-0 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                    </svg>
-                  )}
-                  <span className={entry.status === 'active' ? 'text-purple-700 font-medium' : 'text-gray-400'}>
-                    {entry.label}
-                  </span>
-                  {entry.detail && (
-                    <span className="text-gray-300 truncate max-w-[200px]">{entry.detail}</span>
-                  )}
-                </motion.div>
-              ))}
-              {/* Progress bar */}
-              <div className="mt-1 h-0.5 bg-gray-100 rounded-full overflow-hidden">
-                <motion.div
-                  className={`h-full rounded-full ${phase === 'retrying' || phase === 'self-checking' ? 'bg-amber-400' : 'bg-purple-400'}`}
-                  initial={{ width: '0%' }}
-                  animate={{ width: phase === 'thinking' ? '40%' : phase === 'validating' ? '75%' : phase === 'self-checking' ? '85%' : '90%' }}
-                  transition={{ duration: 0.8, ease: 'easeOut' }}
-                />
-              </div>
+          {isRunning && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.25 }}
+              className="overflow-hidden"
+            >
+              <AgentStepper
+                steps={STEPPER_STEPS}
+                activeStep={activeStep}
+                detail={stepDetail}
+                isRetrying={isRetrying}
+              />
             </motion.div>
           )}
         </AnimatePresence>
       </div>
+
+      {/* ── Welcome: example cards ─────────────────────────────────── */}
+      <AnimatePresence>
+        {showWelcome && (
+          <motion.div {...fade}>
+            <div className="text-center mb-5 mt-2">
+              <h2 className="text-base font-semibold text-gray-800">Что вы хотите узнать?</h2>
+              <p className="text-sm text-gray-400 mt-1">Выберите пример или опишите запрос своими словами</p>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {EXAMPLE_QUERIES.map(ex => (
+                <button
+                  key={ex.title}
+                  type="button"
+                  onClick={() => handleExample(ex.query)}
+                  disabled={isRunning}
+                  className="group flex flex-col items-start gap-2 p-4 bg-white rounded-xl border border-gray-200 shadow-sm hover:border-purple-300 hover:shadow-md hover:shadow-purple-100/50 transition-all duration-200 text-left disabled:opacity-50"
+                >
+                  <div className="w-9 h-9 rounded-lg bg-purple-50 text-purple-500 flex items-center justify-center group-hover:bg-purple-100 group-hover:text-purple-600 transition-colors">
+                    {ex.icon}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-800 group-hover:text-purple-700 transition-colors">{ex.title}</p>
+                    <p className="text-xs text-gray-400 mt-0.5 line-clamp-2">{ex.query}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── Status / result cards ──────────────────────────────────── */}
       <AnimatePresence>
@@ -367,59 +466,71 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
           </motion.div>
         )}
 
-        {/* Success */}
+        {/* Success / Agent message */}
         {phase === 'done' && explanation && (
-          <motion.div {...fade} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            {/* Explanation */}
-            <div className="flex items-start gap-3 px-4 py-3 bg-emerald-50/60 border-b border-emerald-100">
-              <svg className="w-4 h-4 mt-0.5 shrink-0 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-              <div className="flex-1">
-                <p className="text-sm text-emerald-800 leading-relaxed">{explanation}</p>
-                {skillRounds > 0 && (
-                  <p className="mt-1 text-xs text-emerald-600/70 flex items-center gap-1">
-                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+          <motion.div {...fade} className="flex flex-col gap-3">
+            {/* ── Explanation card ─────────────────────────────────── */}
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className={`flex items-start gap-3 px-4 py-3 ${lastSql ? 'bg-emerald-50/60' : 'bg-amber-50/60'}`}>
+                {lastSql ? (
+                  <div className="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center shrink-0 mt-0.5">
+                    <svg className="w-4 h-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
-                    Использовано справочников: {skillRounds}
-                  </p>
+                  </div>
+                ) : (
+                  <div className="w-7 h-7 rounded-full bg-amber-100 flex items-center justify-center shrink-0 mt-0.5">
+                    <svg className="w-4 h-4 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-3 3v-3z" />
+                    </svg>
+                  </div>
                 )}
-              </div>
-            </div>
-
-            {/* Suggestions */}
-            {suggestions.length > 0 && (
-              <div className="px-4 py-3">
-                <p className="text-xs text-gray-400 mb-2">Продолжить работу с текущим отчётом:</p>
-                <div className="flex flex-col gap-1.5">
-                  {suggestions.map(s => (
-                    <button key={s} type="button" onClick={() => handleSuggestion(s)} disabled={isRunning}
-                      title={s}
-                      className="text-left text-xs text-purple-700 bg-purple-50 border border-purple-200 rounded-lg px-3 py-2 hover:bg-purple-100 transition-colors disabled:opacity-50">
-                      <span className="text-purple-400 mr-1">+</span> {s}
-                    </button>
-                  ))}
+                <div className="flex-1">
+                  <p className={`text-sm leading-relaxed ${lastSql ? 'text-emerald-800' : 'text-amber-900'}`}>
+                    {explanation}
+                  </p>
+                  {lastSql && skillRounds > 0 && (
+                    <p className="mt-1.5 text-xs text-emerald-600/70 flex items-center gap-1">
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                      </svg>
+                      Использовано справочников: {skillRounds}
+                    </p>
+                  )}
                 </div>
               </div>
-            )}
 
-            {/* SQL (subtle) */}
-            {lastSql && (
-              <div className="px-4 py-2 border-t border-gray-100">
-                <button type="button" onClick={() => setShowSql(s => !s)}
-                  className="text-[11px] text-gray-400 hover:text-gray-500 transition-colors">
-                  {showSql ? 'Скрыть SQL' : 'SQL'}
-                </button>
-                <AnimatePresence>
-                  {showSql && (
-                    <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.15 }}
-                      className="overflow-hidden mt-2">
-                      <SqlHighlight sql={lastSql} />
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
+              {/* SQL toggle */}
+              {lastSql && (
+                <div className="px-4 py-2 border-t border-gray-100">
+                  <button type="button" onClick={() => setShowSql(s => !s)}
+                    className="text-[11px] text-gray-400 hover:text-gray-500 transition-colors">
+                    {showSql ? 'Скрыть SQL' : 'SQL'}
+                  </button>
+                  <AnimatePresence>
+                    {showSql && (
+                      <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.15 }}
+                        className="overflow-hidden mt-2">
+                        <SqlHighlight sql={lastSql} />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )}
+            </div>
+
+            {/* ── Suggestions — next steps ─────────────────────────── */}
+            {suggestions.length > 0 && (
+              <motion.div {...fade} className="flex flex-wrap gap-2">
+                <span className="text-xs text-gray-400 self-center mr-1">Продолжить:</span>
+                {suggestions.map(s => (
+                  <button key={s} type="button" onClick={() => handleSuggestion(s)} disabled={isRunning}
+                    title={s}
+                    className="text-xs text-purple-700 bg-purple-50 border border-purple-200 rounded-full px-3 py-1.5 hover:bg-purple-100 transition-colors disabled:opacity-50 truncate max-w-xs">
+                    {s}
+                  </button>
+                ))}
+              </motion.div>
             )}
           </motion.div>
         )}
@@ -427,4 +538,3 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
     </div>
   );
 }
-

@@ -6,7 +6,7 @@
  *   2. Must start with SELECT
  *   3. Keyword blocklist  (DDL, DML, EXEC, system functions, DoS, …)
  *   4. Table whitelist    (only our known tables allowed in FROM/JOIN)
- *   5. Auto-inject TOP N  (runaway query protection)
+ *   5. Auto-inject row limit (TOP N for mssql, LIMIT N for postgres/clickhouse)
  */
 
 export interface ValidationResult {
@@ -20,15 +20,23 @@ export interface ValidationError {
 }
 export type SqlValidation = ValidationResult | ValidationError;
 
-// ─── Allowed tables ──────────────────────────────────────────────────────────
+// ─── Dialect ────────────────────────────────────────────────────────────────
 
-const ALLOWED_TABLES = new Set([
-  'Журнал_ОСАГО_Маржа',
-  'Территории',
-  'ДГ',
-  'КРМ',
-  'КРП',
-]);
+export type SqlDialect = 'mssql' | 'postgres' | 'clickhouse';
+
+export interface ValidateOptions {
+  /** Tables allowed in FROM / JOIN. Defaults to ALLOWED_TABLES from schema. */
+  allowedTables?: Set<string>;
+  /** SQL dialect — controls row-limit injection syntax. Defaults to 'mssql'. */
+  dialect?: SqlDialect;
+  /** Maximum rows before auto-limit kicks in. Defaults to 5 000. */
+  maxRows?: number;
+}
+
+// ─── Default allowed tables (derived from schema) ───────────────────────────
+
+import { ALLOWED_TABLES } from './schema';
+export { ALLOWED_TABLES } from './schema';
 
 // ─── Forbidden patterns (checked on comment-stripped SQL) ────────────────────
 
@@ -104,27 +112,40 @@ function extractReferencedTables(sql: string): string[] {
   return results;
 }
 
-// ─── Max rows ────────────────────────────────────────────────────────────────
+// ─── Row-limit injection (dialect-aware) ────────────────────────────────────
 
-const MAX_ROWS = 5_000;
-
-/**
- * Inject TOP N after SELECT if no TOP/FETCH NEXT is present.
- * Works on the stripped string; we rebuild with the original casing of SELECT.
- */
-function injectTopLimit(sql: string): { sql: string; added: boolean } {
-  const hasTop  = /\bSELECT\s+TOP\s+\d+\b/i.test(sql);
-  const hasFetch = /\bFETCH\s+NEXT\b/i.test(sql);
-  if (hasTop || hasFetch) return { sql, added: false };
-  return {
-    sql: sql.replace(/\bSELECT\b/i, `SELECT TOP ${MAX_ROWS}`),
-    added: true,
-  };
+function injectLimit(
+  sql: string,
+  dialect: SqlDialect,
+  maxRows: number,
+): { sql: string; added: boolean } {
+  switch (dialect) {
+    case 'mssql': {
+      const hasTop  = /\bSELECT\s+TOP\s+\d+\b/i.test(sql);
+      const hasFetch = /\bFETCH\s+NEXT\b/i.test(sql);
+      if (hasTop || hasFetch) return { sql, added: false };
+      return {
+        sql: sql.replace(/\bSELECT\b/i, `SELECT TOP ${maxRows}`),
+        added: true,
+      };
+    }
+    case 'postgres':
+    case 'clickhouse': {
+      if (/\bLIMIT\s+\d+\b/i.test(sql)) return { sql, added: false };
+      return { sql: `${sql} LIMIT ${maxRows}`, added: true };
+    }
+  }
 }
 
 // ─── Main export ─────────────────────────────────────────────────────────────
 
-export function validateSql(rawSql: string): SqlValidation {
+export function validateSql(rawSql: string, options?: ValidateOptions): SqlValidation {
+  const {
+    allowedTables = ALLOWED_TABLES,
+    dialect = 'mssql',
+    maxRows = 5_000,
+  } = options ?? {};
+
   if (!rawSql?.trim()) {
     return { valid: false, error: 'Запрос не может быть пустым' };
   }
@@ -146,19 +167,20 @@ export function validateSql(rawSql: string): SqlValidation {
 
   // Layer 4 — table whitelist
   const tables = extractReferencedTables(stripped);
-  const forbidden = tables.filter(t => !ALLOWED_TABLES.has(t));
+  const forbidden = tables.filter(t => !allowedTables.has(t));
   if (forbidden.length > 0) {
     return {
       valid: false,
-      error: `Недопустимые таблицы в запросе: ${forbidden.join(', ')}. Разрешены только: ${[...ALLOWED_TABLES].join(', ')}`,
+      error: `Недопустимые таблицы в запросе: ${forbidden.join(', ')}. Разрешены только: ${[...allowedTables].join(', ')}`,
     };
   }
 
-  // Layer 5 — inject TOP limit, collect warnings
+  // Layer 5 — inject row limit, collect warnings
   const warnings: string[] = [];
-  const { sql: limited, added } = injectTopLimit(stripped);
+  const { sql: limited, added } = injectLimit(stripped, dialect, maxRows);
   if (added) {
-    warnings.push(`Автоматически добавлено ограничение TOP ${MAX_ROWS}`);
+    const limitLabel = dialect === 'mssql' ? `TOP ${maxRows}` : `LIMIT ${maxRows}`;
+    warnings.push(`Автоматически добавлено ограничение ${limitLabel}`);
   }
 
   return { valid: true, sql: limited, ...(warnings.length ? { warnings } : {}) };

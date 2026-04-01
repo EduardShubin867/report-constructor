@@ -1,0 +1,10 @@
+[
+  {
+    "id": "devsql",
+    "name": "Основная mssql база",
+    "dialect": "mssql",
+    "server": "devsql",
+    "user": "Grafana",
+    "password": "sRZi9aJs"
+  }
+]

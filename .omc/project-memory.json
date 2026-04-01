@@ -1,0 +1,450 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1774875991614,
+  "projectRoot": "/Users/eduardshubin/code/constructor",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      },
+      {
+        "name": "TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "tsconfig.json"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "next",
+        "version": "16.2.1",
+        "category": "fullstack"
+      },
+      {
+        "name": "react",
+        "version": "19.2.4",
+        "category": "frontend"
+      },
+      {
+        "name": "react-dom",
+        "version": "19.2.4",
+        "category": "frontend"
+      }
+    ],
+    "packageManager": "npm",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "npm run build",
+    "testCommand": null,
+    "lintCommand": "npm run lint",
+    "devCommand": "npm run dev",
+    "scripts": {
+      "dev": "next dev",
+      "build": "next build",
+      "start": "next start",
+      "lint": "eslint"
+    }
+  },
+  "conventions": {
+    "namingStyle": "camelCase/PascalCase",
+    "importStyle": "ES modules",
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "app",
+      "components",
+      "lib",
+      "public"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "app": {
+      "path": "app",
+      "purpose": "Application code",
+      "fileCount": 4,
+      "lastAccessed": 1774875991597,
+      "keyFiles": [
+        "favicon.ico",
+        "globals.css",
+        "layout.tsx",
+        "page.tsx"
+      ]
+    },
+    "components": {
+      "path": "components",
+      "purpose": "UI components",
+      "fileCount": 14,
+      "lastAccessed": 1774875991597,
+      "keyFiles": [
+        "AgentInput.tsx",
+        "AgentStepper.tsx",
+        "ColumnSelector.tsx",
+        "ConnectionEditor.tsx",
+        "DataTable.tsx"
+      ]
+    },
+    "data": {
+      "path": "data",
+      "purpose": "Data files",
+      "fileCount": 2,
+      "lastAccessed": 1774875991597,
+      "keyFiles": [
+        "connections.json",
+        "sources.json"
+      ]
+    },
+    "lib": {
+      "path": "lib",
+      "purpose": "Library code",
+      "fileCount": 8,
+      "lastAccessed": 1774875991597,
+      "keyFiles": [
+        "agent-skills.ts",
+        "constants.ts",
+        "db.ts",
+        "query-builder.ts",
+        "query-cache.ts"
+      ]
+    },
+    "public": {
+      "path": "public",
+      "purpose": "Public files",
+      "fileCount": 5,
+      "lastAccessed": 1774875991603,
+      "keyFiles": [
+        "file.svg",
+        "globe.svg",
+        "next.svg",
+        "vercel.svg",
+        "window.svg"
+      ]
+    },
+    "app/api": {
+      "path": "app/api",
+      "purpose": "API routes",
+      "fileCount": 0,
+      "lastAccessed": 1774875991604,
+      "keyFiles": []
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "lib/agents/sql-analyst.ts",
+      "accessCount": 15,
+      "lastAccessed": 1774928370541,
+      "type": "file"
+    },
+    {
+      "path": "components/SkillEditor.tsx",
+      "accessCount": 9,
+      "lastAccessed": 1774878675690,
+      "type": "file"
+    },
+    {
+      "path": "lib/skills/registry.ts",
+      "accessCount": 8,
+      "lastAccessed": 1774928309850,
+      "type": "file"
+    },
+    {
+      "path": "app/api/agent/route.ts",
+      "accessCount": 7,
+      "lastAccessed": 1774898510525,
+      "type": "file"
+    },
+    {
+      "path": "lib/schema/types.ts",
+      "accessCount": 6,
+      "lastAccessed": 1774898513403,
+      "type": "file"
+    },
+    {
+      "path": "app/admin/page.tsx",
+      "accessCount": 6,
+      "lastAccessed": 1774898513635,
+      "type": "file"
+    },
+    {
+      "path": "app/admin/SkillsManager.tsx",
+      "accessCount": 5,
+      "lastAccessed": 1774878639286,
+      "type": "file"
+    },
+    {
+      "path": "lib/schema/index.ts",
+      "accessCount": 5,
+      "lastAccessed": 1774898513209,
+      "type": "directory"
+    },
+    {
+      "path": "lib/agents/types.ts",
+      "accessCount": 5,
+      "lastAccessed": 1774928305381,
+      "type": "file"
+    },
+    {
+      "path": "components/AgentInput.tsx",
+      "accessCount": 5,
+      "lastAccessed": 1774928316425,
+      "type": "file"
+    },
+    {
+      "path": "lib/agents/registry.ts",
+      "accessCount": 5,
+      "lastAccessed": 1774928499493,
+      "type": "file"
+    },
+    {
+      "path": "",
+      "accessCount": 4,
+      "lastAccessed": 1774898514216,
+      "type": "directory"
+    },
+    {
+      "path": "lib/skills/read-custom-instruction.ts",
+      "accessCount": 4,
+      "lastAccessed": 1774898515217,
+      "type": "file"
+    },
+    {
+      "path": "lib/agents/orchestrator.ts",
+      "accessCount": 4,
+      "lastAccessed": 1774898533413,
+      "type": "file"
+    },
+    {
+      "path": "data/sources.json",
+      "accessCount": 4,
+      "lastAccessed": 1774928351506,
+      "type": "file"
+    },
+    {
+      "path": "app/admin/SourcesManager.tsx",
+      "accessCount": 3,
+      "lastAccessed": 1774878976955,
+      "type": "file"
+    },
+    {
+      "path": "app/reports/page.tsx",
+      "accessCount": 3,
+      "lastAccessed": 1774898507597,
+      "type": "file"
+    },
+    {
+      "path": "lib/skills/types.ts",
+      "accessCount": 3,
+      "lastAccessed": 1774898509554,
+      "type": "file"
+    },
+    {
+      "path": "lib/schema/store.ts",
+      "accessCount": 3,
+      "lastAccessed": 1774898523916,
+      "type": "file"
+    },
+    {
+      "path": "app/api/report/route.ts",
+      "accessCount": 3,
+      "lastAccessed": 1774898533362,
+      "type": "file"
+    },
+    {
+      "path": "app/api/admin/skills/route.ts",
+      "accessCount": 2,
+      "lastAccessed": 1774877860155,
+      "type": "file"
+    },
+    {
+      "path": "app/api/admin/skills/[id]/route.ts",
+      "accessCount": 2,
+      "lastAccessed": 1774877860419,
+      "type": "file"
+    },
+    {
+      "path": "components/SqlResultTable.tsx",
+      "accessCount": 2,
+      "lastAccessed": 1774898392222,
+      "type": "file"
+    },
+    {
+      "path": "package.json",
+      "accessCount": 2,
+      "lastAccessed": 1774898398213,
+      "type": "file"
+    },
+    {
+      "path": "lib/agents/runner.ts",
+      "accessCount": 2,
+      "lastAccessed": 1774898507135,
+      "type": "file"
+    },
+    {
+      "path": "app/api/query/route.ts",
+      "accessCount": 2,
+      "lastAccessed": 1774898507513,
+      "type": "file"
+    },
+    {
+      "path": "lib/skills/lookup-dg.ts",
+      "accessCount": 2,
+      "lastAccessed": 1774898513848,
+      "type": "file"
+    },
+    {
+      "path": "lib/skills/lookup-territory.ts",
+      "accessCount": 2,
+      "lastAccessed": 1774898513989,
+      "type": "file"
+    },
+    {
+      "path": "lib/skills/list-column-values.ts",
+      "accessCount": 2,
+      "lastAccessed": 1774898514280,
+      "type": "file"
+    },
+    {
+      "path": "lib/skills/get-krm-krp.ts",
+      "accessCount": 2,
+      "lastAccessed": 1774898514435,
+      "type": "file"
+    },
+    {
+      "path": "lib/skills/validate-query.ts",
+      "accessCount": 2,
+      "lastAccessed": 1774898515116,
+      "type": "file"
+    },
+    {
+      "path": "lib/skills/read-instruction.ts",
+      "accessCount": 2,
+      "lastAccessed": 1774898515166,
+      "type": "file"
+    },
+    {
+      "path": "lib/skills/instructions/sql-best-practices.md",
+      "accessCount": 2,
+      "lastAccessed": 1774898526584,
+      "type": "file"
+    },
+    {
+      "path": "lib/agent-skills.ts",
+      "accessCount": 1,
+      "lastAccessed": 1774876025373,
+      "type": "file"
+    },
+    {
+      "path": "app/api/admin/sources/route.ts",
+      "accessCount": 1,
+      "lastAccessed": 1774878584780,
+      "type": "file"
+    },
+    {
+      "path": "app/api/admin/schema/route.ts",
+      "accessCount": 1,
+      "lastAccessed": 1774878616773,
+      "type": "file"
+    },
+    {
+      "path": "app/admin/static-sources.ts",
+      "accessCount": 1,
+      "lastAccessed": 1774878759219,
+      "type": "file"
+    },
+    {
+      "path": "lib/schema/osago.ts",
+      "accessCount": 1,
+      "lastAccessed": 1774878763534,
+      "type": "file"
+    },
+    {
+      "path": "components/DataTable.tsx",
+      "accessCount": 1,
+      "lastAccessed": 1774898397785,
+      "type": "file"
+    },
+    {
+      "path": "lib/agents/index.ts",
+      "accessCount": 1,
+      "lastAccessed": 1774898507188,
+      "type": "file"
+    },
+    {
+      "path": "lib/llm/types.ts",
+      "accessCount": 1,
+      "lastAccessed": 1774898510708,
+      "type": "file"
+    },
+    {
+      "path": "lib/agents",
+      "accessCount": 1,
+      "lastAccessed": 1774898519265,
+      "type": "directory"
+    },
+    {
+      "path": "lib/skills",
+      "accessCount": 1,
+      "lastAccessed": 1774898519713,
+      "type": "directory"
+    },
+    {
+      "path": "lib/schema/to-prompt.ts",
+      "accessCount": 1,
+      "lastAccessed": 1774898524479,
+      "type": "file"
+    },
+    {
+      "path": "lib/llm/openrouter.ts",
+      "accessCount": 1,
+      "lastAccessed": 1774898531626,
+      "type": "file"
+    },
+    {
+      "path": "lib/report-columns.ts",
+      "accessCount": 1,
+      "lastAccessed": 1774898533464,
+      "type": "file"
+    },
+    {
+      "path": "app/api/report/export/route.ts",
+      "accessCount": 1,
+      "lastAccessed": 1774898536823,
+      "type": "file"
+    },
+    {
+      "path": "app/api/query/export/route.ts",
+      "accessCount": 1,
+      "lastAccessed": 1774898537033,
+      "type": "file"
+    },
+    {
+      "path": "components",
+      "accessCount": 1,
+      "lastAccessed": 1774928310877,
+      "type": "directory"
+    },
+    {
+      "path": "lib/agents/trend-analyst.ts",
+      "accessCount": 1,
+      "lastAccessed": 1774928432788,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}
