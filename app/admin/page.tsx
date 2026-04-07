@@ -4,11 +4,17 @@ import Link from 'next/link';
 import { useState } from 'react';
 import SourcesManager from './SourcesManager';
 import SkillsManager from './SkillsManager';
+import { BASE_PATH } from '@/lib/constants';
 
 type Tab = 'skills' | 'connections';
 
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<Tab>('skills');
+
+  async function handleLogout() {
+    await fetch(`${BASE_PATH}/api/admin/login`, { method: 'DELETE' });
+    window.location.reload();
+  }
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
@@ -23,6 +29,12 @@ export default function AdminPage() {
           </Link>
           <div className="w-px h-4 bg-zinc-700" />
           <h1 className="text-sm font-semibold text-zinc-200">Админ-панель</h1>
+          <button
+            onClick={handleLogout}
+            className="ml-auto text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+          >
+            Выйти
+          </button>
         </div>
 
         {/* Tabs */}
