@@ -7,6 +7,8 @@ services:
       - "devsql:10.10.129.117"
     ports:
       - "3400:3000"
+    # Bind mount must be readable/writable by container user nextjs (UID 1001), e.g.:
+    #   sudo chown -R 1001:1001 ./data
     volumes:
       - ./data:/app/data
     environment:
