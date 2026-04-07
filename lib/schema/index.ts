@@ -50,7 +50,9 @@ function makeLiveSetProxy(getter: () => Set<string>): Set<string> {
     get(_, prop) {
       const live = getter();
       const val = (live as unknown as Record<string | symbol, unknown>)[prop];
-      return typeof val === 'function' ? (val as Function).bind(live) : val;
+      return typeof val === 'function'
+        ? (val as (...args: unknown[]) => unknown).bind(live)
+        : val;
     },
     has(_, value) {
       return getter().has(value as string);

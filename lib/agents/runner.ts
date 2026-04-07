@@ -1,103 +1,90 @@
 /**
- * Generic agent runner — executes a sub-agent's tool-calling loop.
- *
- * Extracted from the original route.ts so every sub-agent reuses
- * the same multi-turn loop logic without duplication.
+ * Generic agent runner — Vercel AI SDK generateText + tools + structured output.
  */
 
-import type { LLMMessage } from '@/lib/llm/types';
+import { generateText, NoObjectGeneratedError, Output, stepCountIs } from 'ai';
 import type { RunnerOptions } from './types';
 import { resolveAgentModel } from './registry';
+import { createAppOpenRouter } from '@/lib/llm/openrouter-factory';
+import { buildAgentToolSet } from '@/lib/skills/registry';
+import {
+  agentResponseSchema,
+  filterTechnicalExplanation,
+  tryParseAgentResponseFromText,
+} from './agent-response-schema';
 
 const DEFAULT_MAX_ROUNDS = 5;
 
+/** Extra steps beyond tool rounds for the structured-output final step (+ buffer). */
+const STRUCTURED_OUTPUT_STEP_BUFFER = 4;
+
+function toolCallArgs(tc: { input?: unknown }): Record<string, unknown> {
+  const input = tc.input;
+  if (input && typeof input === 'object' && !Array.isArray(input)) {
+    return input as Record<string, unknown>;
+  }
+  return {};
+}
+
 export async function runAgent(opts: RunnerOptions): Promise<void> {
-  const { provider, agent, ctx, send } = opts;
-  const model = resolveAgentModel(agent.model);
+  const { agent, ctx, send } = opts;
+  const openrouter = createAppOpenRouter();
+  const modelId = resolveAgentModel(agent.model);
+  const model = openrouter(modelId);
+  const tools = buildAgentToolSet();
   const maxRounds = agent.maxRounds ?? DEFAULT_MAX_ROUNDS;
+  const stepBudget = maxRounds + STRUCTURED_OUTPUT_STEP_BUFFER;
 
   const startTime = Date.now();
-  console.log(`[Agent:${agent.name}] started, model=${model}`);
-
-  const messages: LLMMessage[] = [
-    { role: 'system', content: agent.buildSystemPrompt(ctx) },
-    { role: 'user', content: agent.buildUserMessage(ctx) },
-  ];
+  console.log(`[Agent:${agent.name}] started, model=${modelId}`);
 
   let skillRounds = 0;
   send({ type: 'phase', phase: 'thinking' });
 
-  /* ── Tool-calling loop ───────────────────────────────────────────── */
-  for (let round = 0; round < maxRounds; round++) {
-    const { message: assistantMsg, finishReason } = await provider.call({
+  try {
+    const result = await generateText({
       model,
-      messages,
-      tools: agent.tools.length > 0 ? agent.tools : undefined,
-      toolChoice: agent.tools.length > 0 ? 'auto' : undefined,
+      system: agent.buildSystemPrompt(ctx),
+      messages: [{ role: 'user', content: agent.buildUserMessage(ctx) }],
+      tools,
+      temperature: 0.1,
+      stopWhen: stepCountIs(stepBudget),
+      output: Output.object({ schema: agentResponseSchema }),
+      onStepFinish: step => {
+        if (step.toolCalls.length > 0) skillRounds++;
+        for (const tc of step.toolCalls) {
+          const name = 'toolName' in tc ? String(tc.toolName) : 'unknown';
+          console.log(`[Agent:${agent.name}] Skill: ${name}(${JSON.stringify(toolCallArgs(tc))})`);
+          send({ type: 'skill', name, args: toolCallArgs(tc) });
+        }
+      },
     });
 
-    // Handle tool calls
-    if (assistantMsg.tool_calls?.length) {
-      skillRounds++;
-      messages.push(assistantMsg);
+    send({ type: 'phase', phase: 'finalizing' });
 
-      for (const tc of assistantMsg.tool_calls) {
-        let args: Record<string, unknown> = {};
-        try { args = JSON.parse(tc.function.arguments); } catch { /* noop */ }
-
-        console.log(`[Agent:${agent.name}] Skill: ${tc.function.name}(${JSON.stringify(args)})`);
-        send({ type: 'skill', name: tc.function.name, args });
-
-        const result = await agent.executeSkill(tc.function.name, args);
-        messages.push({ role: 'tool', tool_call_id: tc.id, content: result });
-      }
-      continue;
-    }
-
-    // Try to parse a final result from content
-    if (assistantMsg.content) {
-      const parsed = agent.parseResult(assistantMsg.content);
-      if (parsed) {
-        parsed._skillRounds = skillRounds;
-        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-        console.log(`[Agent:${agent.name}] Done in ${elapsed}s, rounds=${skillRounds}`);
-        send({ type: 'result', data: parsed });
+    const output = result.output;
+    const cleanedExplanation = filterTechnicalExplanation(output.sql, output.explanation);
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`[Agent:${agent.name}] Done in ${elapsed}s, skillRounds=${skillRounds}`);
+    send({
+      type: 'result',
+      data: { ...output, explanation: cleanedExplanation, _skillRounds: skillRounds },
+    });
+  } catch (err) {
+    if (NoObjectGeneratedError.isInstance(err)) {
+      const fallback = tryParseAgentResponseFromText(err.text ?? '');
+      if (fallback) {
+        send({ type: 'phase', phase: 'finalizing' });
+        const exp = filterTechnicalExplanation(fallback.sql, fallback.explanation);
+        send({
+          type: 'result',
+          data: { ...fallback, explanation: exp, _skillRounds: skillRounds },
+        });
         return;
       }
     }
-
-    if (finishReason === 'stop') break;
+    console.error(`[Agent:${agent.name}]`, err);
+    const message = err instanceof Error ? err.message : 'Внутренняя ошибка агента';
+    send({ type: 'error', error: message });
   }
-
-  /* ── Final call without tools ────────────────────────────────────── */
-  console.log(`[Agent:${agent.name}] Final call (no tools), rounds=${skillRounds}`);
-  send({ type: 'phase', phase: 'finalizing' });
-
-  if (agent.finalNudge) {
-    messages.push({ role: 'user', content: agent.finalNudge });
-  }
-
-  const { message: finalMsg } = await provider.call({
-    model,
-    messages,
-    responseFormat: { type: 'json_object' },
-  });
-
-  if (!finalMsg.content) {
-    send({ type: 'error', error: 'Пустой ответ от модели' });
-    return;
-  }
-
-  const parsed = agent.parseResult(finalMsg.content);
-  if (!parsed) {
-    // Последний шанс: отдаём сырой текст как объяснение вместо ошибки
-    console.error(`[Agent:${agent.name}] Failed to parse final:`, finalMsg.content);
-    send({ type: 'result', data: { sql: '', explanation: finalMsg.content || 'Не удалось сформировать ответ', suggestions: [], canRetry: false } });
-    return;
-  }
-
-  parsed._skillRounds = skillRounds;
-  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-  console.log(`[Agent:${agent.name}] Done (final) in ${elapsed}s, rounds=${skillRounds}`);
-  send({ type: 'result', data: parsed });
 }

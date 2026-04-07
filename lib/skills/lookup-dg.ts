@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { getPool, queryWithTimeout, TIMEOUT } from '../db';
 import type { ToolSkill } from './types';
 
@@ -6,16 +7,11 @@ const lookupDg: ToolSkill = {
   name: 'lookup_dg',
   description:
     'Поиск дилерской группы (ДГ) по наименованию в справочнике. Используй ВСЕГДА когда пользователь упоминает конкретную ДГ (например "150 ДГ", "ДГ Рольф", "дг 022"). Ищет по полю Наименование, возвращает Код (для WHERE dg.[Код] = ...) и Наименование. Пользователь обычно называет ДГ по имени или по номеру — оба содержатся в поле Наименование.',
-  parameters: {
-    type: 'object',
-    properties: {
-      search: {
-        type: 'string',
-        description: 'Строка для поиска в Наименовании ДГ (например "150", "Рольф", "022")',
-      },
-    },
-    required: ['search'],
-  },
+  inputSchema: z.object({
+    search: z
+      .string()
+      .describe('Строка для поиска в Наименовании ДГ (например "150", "Рольф", "022")'),
+  }) as z.ZodType<Record<string, unknown>>,
 
   async execute(args) {
     const search = String(args.search ?? '').trim();

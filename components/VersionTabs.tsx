@@ -1,7 +1,5 @@
 'use client';
 
-import { motion } from 'framer-motion';
-
 export interface VersionTabInfo {
   id: number;
   label: string;
@@ -25,20 +23,17 @@ export default function VersionTabs({ versions, activeIdx, onSelect }: VersionTa
             type="button"
             onClick={() => onSelect(idx)}
             title={v.query}
-            className={`relative px-3 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap
+            className={`relative flex items-center gap-1 whitespace-nowrap rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors
               ${isActive
-                ? 'text-purple-700'
-                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                ? 'border-primary bg-primary text-on-primary shadow-[0_6px_16px_rgba(52,92,150,0.18)]'
+                : 'border-outline-variant/25 bg-white/72 text-on-surface-variant hover:border-outline-variant/45 hover:bg-surface-container-low/70 hover:text-on-surface'
               }`}
           >
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${isActive ? 'bg-on-primary/90' : 'bg-outline-variant/80'}`}
+              aria-hidden
+            />
             {v.label}
-            {isActive && (
-              <motion.div
-                layoutId="version-tab-indicator"
-                className="absolute inset-0 bg-purple-100 rounded-lg -z-10"
-                transition={{ type: 'spring', bounce: 0.2, duration: 0.4 }}
-              />
-            )}
           </button>
         );
       })}

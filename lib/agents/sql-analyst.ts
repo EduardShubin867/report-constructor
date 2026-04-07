@@ -5,7 +5,7 @@
  */
 
 import type { SubAgentConfig, AgentContext } from './types';
-import { AGENT_TOOLS, executeSkill, getTextInstructionsCatalog } from '@/lib/skills/registry';
+import { getTextInstructionsCatalog } from '@/lib/skills/registry';
 import { getDataSources } from '@/lib/schema';
 import { schemaToPrompt } from '@/lib/schema/to-prompt';
 
@@ -30,6 +30,8 @@ ${schema}
 2. **Сначала lookup, потом SQL.** Никогда не подставляй в SQL значения которые назвал пользователь напрямую — ищи точные ID/коды через инструменты.
 3. Можно вызвать несколько инструментов одновременно если нужны данные из разных справочников.
 4. Читай инструкции через \`read_instruction\` когда тебе нужна подробная информация по теме.
+5. Если запрос про город, территорию использования ТС или формулировку вида «по территориям в Москве/регионе» — сначала вызови \`lookup_territory\`, затем строй SQL через \`LEFT JOIN [dbo].[Территории] AS ter ON m.[ID_ТерриторияИспользованияТС] = ter.[ID]\`.
+6. Если пользователь просит отчёт именно **по территориям**, не подменяй это прямым фильтром по \`m.[Регион]\`. Для таких запросов используй поля справочника \`ter.[Наименование]\`, \`ter.[Регион]\`, \`ter.[ТипТерритории]\` или ID из \`lookup_territory\`.
 
 ### ВАЖНО: Экономия раундов
 
@@ -43,6 +45,7 @@ ${schema}
 
 ПЕРЕД финальным ответом с SQL вызови \`validate_query\` РОВНО ОДИН РАЗ с готовым запросом.
 - Если 0 строк — НЕ зацикливайся. Максимум ОДНА попытка исправить (ослабить фильтры или проверить значения). Итого validate_query вызывается не более 2 раз за весь диалог.
+- Если 0 строк в запросе про город/территорию — перепроверь \`lookup_territory\` и попробуй перейти с прямого фильтра основной таблицы на \`JOIN\` со справочником \`[dbo].[Территории]\`.
 - Если мало строк (< 5) — упомяни это в explanation
 - НЕ используй validate_query для «разведки» или итеративной разработки — сначала напиши полный SQL, потом проверь
 
@@ -82,6 +85,17 @@ WHERE dg.[Код] = '<код из инструмента>'
   AND YEAR(m.[ДатаЗаключения]) = YEAR('${today}')
 GROUP BY dg.[Наименование]
 
+Запрос: "распределение договоров по территориям в Москве"
+→ Это отчёт именно по территориям, поэтому используй JOIN со справочником территорий:
+SELECT ter.[Наименование] AS [Территория],
+       COUNT(*) AS [КоличествоДоговоров],
+       SUM(m.[Премия]) AS [СуммаПремий]
+FROM [dbo].[Журнал_ОСАГО_Маржа] m
+LEFT JOIN [dbo].[Территории] AS ter ON m.[ID_ТерриторияИспользованияТС] = ter.[ID]
+WHERE ter.[Регион] = N'Москва'
+GROUP BY ter.[Наименование]
+ORDER BY [КоличествоДоговоров] DESC
+
 ## Формат финального ответа
 
 Когда готов написать SQL, отвечай ТОЛЬКО валидным JSON без markdown-обёртки:
@@ -103,6 +117,8 @@ canRetry — ТОЛЬКО в режиме исправления ошибки: f
 1. НЕ расшифровывай аббревиатуры ДГ, КРМ, КРП — пользователи знают что это. Пиши просто «ДГ», не «Дилерская группа» и не «Диалект Груп».
 2. Пиши кратко и по делу — что показывает отчёт, без технических деталей SQL.
 3. Если запрос вернул мало строк — упомяни это.
+4. **Запрещено** описывать правки ради валидатора: CTE/WITH, подзапросы во FROM, «запрос должен начинаться с SELECT», TOP, «система требует». Пользователь не разработчик — ему нужен смысл цифр (период, метрика, разрез), а не как ты переписал SQL.
+5. Если использовал подзапрос вместо WITH — **молчи об этом** в explanation; опиши только бизнес-содержание результата.
 
 ${getTextInstructionsCatalog({
     activeSourceIds: getDataSources().map(ds => ds.id),
@@ -114,7 +130,7 @@ function buildUserMessage(ctx: AgentContext): string {
   const { query, previousSql, retryError } = ctx;
 
   if (retryError && previousSql) {
-    return `SQL-запрос вернул ошибку базы данных. Исправь его.\n\nТекущий SQL:\n${previousSql}\n\nОшибка:\n${retryError}\n\nВерни исправленный SQL. Если ошибка связана с несуществующей колонкой/таблицей — установи canRetry: false.`;
+    return `SQL-запрос вернул ошибку базы данных. Исправь его.\n\nТекущий SQL:\n${previousSql}\n\nОшибка:\n${retryError}\n\nВерни исправленный SQL. Если ошибка связана с несуществующей колонкой/таблицей — сначала проверь схему и замени фильтр на доступный путь через JOIN/lookup (например, через справочник территорий). Устанавливай canRetry: false только если в схеме действительно нет рабочей альтернативы. В explanation не описывай предыдущую ошибку и ход исправления: если итоговый запрос рабочий, explanation должен кратко описывать только итоговый отчёт.`;
   }
 
   if (previousSql) {
@@ -123,37 +139,6 @@ function buildUserMessage(ctx: AgentContext): string {
 
   return query;
 }
-
-/* ── JSON extraction (handles markdown fences, bare objects, etc.) ── */
-
-function extractJson(text: string): string | null {
-  try { JSON.parse(text); return text; } catch { /* noop */ }
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fenced) { try { JSON.parse(fenced[1]); return fenced[1]; } catch { /* noop */ } }
-  const braces = text.match(/\{[\s\S]*\}/);
-  if (braces) { try { JSON.parse(braces[0]); return braces[0]; } catch { /* noop */ } }
-  return null;
-}
-
-function parseResult(content: string): Record<string, unknown> | null {
-  const jsonStr = extractJson(content);
-  if (jsonStr) {
-    const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
-    if (typeof parsed.sql === 'string' && parsed.sql.trim()) return parsed;
-    // JSON без SQL — агент объяснил почему не может помочь
-    if (typeof parsed.explanation === 'string' && parsed.explanation.trim()) {
-      return { sql: '', explanation: parsed.explanation, suggestions: parsed.suggestions ?? [], canRetry: false };
-    }
-  }
-  // Текстовый ответ — агент объясняет ситуацию без JSON
-  const trimmed = content.trim();
-  if (trimmed.length > 20) {
-    return { sql: '', explanation: trimmed, suggestions: [], canRetry: false };
-  }
-  return null;
-}
-
-/* ── Sub-agent config ──────────────────────────────────────────────── */
 
 const sqlAnalyst: SubAgentConfig = {
   name: 'sql-analyst',
@@ -173,11 +158,6 @@ const sqlAnalyst: SubAgentConfig = {
   },
   buildSystemPrompt,
   buildUserMessage,
-  tools: AGENT_TOOLS,
-  executeSkill,
-  parseResult,
-  finalNudge:
-    'Инструменты больше недоступны. Верни финальный ответ в формате JSON с полями sql, explanation, suggestions. Используй ЛУЧШИЙ запрос из тех что ты уже проверил через validate_query. Если ни один запрос не вернул строки — верни наиболее вероятный вариант и укажи это в explanation.',
 };
 
 export default sqlAnalyst;

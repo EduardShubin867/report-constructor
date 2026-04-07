@@ -1,17 +1,15 @@
 import { NextRequest } from 'next/server';
-import { createOpenRouterProvider } from '@/lib/llm/openrouter';
 import { orchestrate } from '@/lib/agents/orchestrator';
 import type { AgentEvent } from '@/lib/agents/types';
+import type { AgentResponseOutput } from '@/lib/agents/agent-response-schema';
+import { recordAgentRun } from '@/lib/agent-analytics';
+import { getBusinessToday } from '@/lib/business-time';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120; // seconds — agent does multiple LLM roundtrips
 
-/** Response shape returned by the sql-analyst sub-agent */
-export interface AgentResponse {
-  sql: string;
-  explanation: string;
-  suggestions: string[];
-  canRetry?: boolean;
+/** Response shape returned by sub-agents after structured output + SSE */
+export interface AgentResponse extends AgentResponseOutput {
   _skillRounds?: number;
 }
 
@@ -39,7 +37,9 @@ export async function POST(request: NextRequest) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
+      const events: AgentEvent[] = [];
       const send = (event: AgentEvent) => {
+        events.push(event);
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
       };
 
@@ -47,15 +47,9 @@ export async function POST(request: NextRequest) {
       console.log('[Agent] SSE request started');
 
       try {
-        const provider = createOpenRouterProvider({
-          apiKey,
-          siteUrl: process.env.NEXT_PUBLIC_SITE_URL,
-        });
-
-        const today = new Date().toISOString().slice(0, 10);
+        const today = getBusinessToday();
 
         await orchestrate({
-          provider,
           ctx: { today, query, previousSql, retryError },
           send,
         });
@@ -63,6 +57,12 @@ export async function POST(request: NextRequest) {
         console.error(`[Agent] Error after ${((Date.now() - startTime) / 1000).toFixed(1)}s:`, err);
         const message = err instanceof Error ? err.message : 'Внутренняя ошибка сервера';
         send({ type: 'error', error: message });
+      } finally {
+        recordAgentRun({
+          userQuery: query,
+          events,
+          durationMs: Date.now() - startTime,
+        });
       }
 
       controller.close();

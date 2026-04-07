@@ -7,7 +7,7 @@
  */
 
 import type { SubAgentConfig, AgentContext } from './types';
-import { AGENT_TOOLS, executeSkill, getTextInstructionsCatalog } from '@/lib/skills/registry';
+import { getTextInstructionsCatalog } from '@/lib/skills/registry';
 import { getDataSources } from '@/lib/schema';
 import { schemaToPrompt } from '@/lib/schema/to-prompt';
 
@@ -85,36 +85,6 @@ function buildUserMessage(ctx: AgentContext): string {
   return query;
 }
 
-function extractJson(text: string): string | null {
-  try { JSON.parse(text); return text; } catch { /* noop */ }
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fenced) { try { JSON.parse(fenced[1]); return fenced[1]; } catch { /* noop */ } }
-  const braces = text.match(/\{[\s\S]*\}/);
-  if (braces) { try { JSON.parse(braces[0]); return braces[0]; } catch { /* noop */ } }
-  return null;
-}
-
-function parseResult(content: string): Record<string, unknown> | null {
-  const jsonStr = extractJson(content);
-  if (jsonStr) {
-    const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
-    // Valid if has explanation (sql can be empty for this agent)
-    if (typeof parsed.explanation === 'string' && parsed.explanation.trim()) {
-      return {
-        sql: typeof parsed.sql === 'string' ? parsed.sql : '',
-        explanation: parsed.explanation,
-        suggestions: parsed.suggestions ?? [],
-        canRetry: false,
-      };
-    }
-  }
-  const trimmed = content.trim();
-  if (trimmed.length > 20) {
-    return { sql: '', explanation: trimmed, suggestions: [], canRetry: false };
-  }
-  return null;
-}
-
 const explainAnalyst: SubAgentConfig = {
   name: 'explain-analyst',
   description: 'Интерпретация данных и объяснение паттернов: почему маржа упала, что означают эти числа, анализ аномалий и трендов. Отвечает текстом с гипотезами и выводами, может выполнять SQL для получения данных.',
@@ -127,11 +97,6 @@ const explainAnalyst: SubAgentConfig = {
   },
   buildSystemPrompt,
   buildUserMessage,
-  tools: AGENT_TOOLS,
-  executeSkill,
-  parseResult,
-  finalNudge:
-    'Инструменты больше недоступны. Верни финальный ответ в формате JSON с полями sql (пустая строка если не нужен), explanation (подробный анализ), suggestions.',
 };
 
 export default explainAnalyst;

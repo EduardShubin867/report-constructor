@@ -6,16 +6,16 @@
  * 2. LLM routing → ask LLM to pick from agent catalog (fallback)
  */
 
-import type { LLMProvider, LLMMessage } from '@/lib/llm/types';
+import { generateText } from 'ai';
 import type { AgentContext, AgentEventSink, SubAgentConfig } from './types';
 import { getAllAgents, getAgent, resolveRouterModel, getAgentCatalog } from './registry';
 import { runAgent } from './runner';
+import { createAppOpenRouter } from '@/lib/llm/openrouter-factory';
 
 /** Minimum match() score to route without LLM */
 const MATCH_THRESHOLD = 0.5;
 
 export interface OrchestratorOptions {
-  provider: LLMProvider;
   ctx: AgentContext;
   send: AgentEventSink;
   /**
@@ -29,7 +29,7 @@ export interface OrchestratorOptions {
  * Run the orchestrator.
  */
 export async function orchestrate(opts: OrchestratorOptions): Promise<void> {
-  const { provider, ctx, send } = opts;
+  const { ctx, send } = opts;
   const agents = getAllAgents();
 
   if (agents.length === 0) {
@@ -42,31 +42,26 @@ export async function orchestrate(opts: OrchestratorOptions): Promise<void> {
   if (matched) {
     console.log(`[Orchestrator] Matched by score: ${matched.name}`);
     send({ type: 'sub_agent', name: matched.name });
-    await runAgent({ provider, agent: matched, ctx, send });
+    await runAgent({ agent: matched, ctx, send });
     return;
   }
 
   /* ── 2. LLM routing (fallback) ──────────────────────────────────── */
-  const chosenName = await routeQueryLLM(provider, ctx, opts.routerModel);
+  const chosenName = await routeQueryLLM(ctx, opts.routerModel);
   const agent = getAgent(chosenName);
   if (!agent) {
     console.warn(`[Orchestrator] LLM returned unknown agent "${chosenName}", falling back to ${agents[0].name}`);
     send({ type: 'sub_agent', name: agents[0].name });
-    await runAgent({ provider, agent: agents[0], ctx, send });
+    await runAgent({ agent: agents[0], ctx, send });
     return;
   }
 
   send({ type: 'sub_agent', name: agent.name });
-  await runAgent({ provider, agent, ctx, send });
+  await runAgent({ agent, ctx, send });
 }
 
 /* ────────────────────────────────────────────────────────────────────
  * Level 2: match() scoring
- *
- * Score all agents that have a match() function.
- * If exactly one scores ≥ threshold → return it.
- * If multiple score ≥ threshold → return the highest (tie = null → LLM).
- * If none score ≥ threshold → return null → LLM.
  * ──────────────────────────────────────────────────────────────────── */
 
 function tryMatchRouting(
@@ -106,7 +101,6 @@ function tryMatchRouting(
  * ──────────────────────────────────────────────────────────────────── */
 
 async function routeQueryLLM(
-  provider: LLMProvider,
   ctx: AgentContext,
   routerModel?: string,
 ): Promise<string> {
@@ -115,32 +109,25 @@ async function routeQueryLLM(
     .map(a => `- **${a.name}**: ${a.description}`)
     .join('\n');
 
-  const messages: LLMMessage[] = [
-    {
-      role: 'system',
-      content: `Ты — маршрутизатор запросов. Твоя задача — определить, какой суб-агент лучше всего подходит для обработки запроса пользователя.
+  const system = `Ты — маршрутизатор запросов. Твоя задача — определить, какой суб-агент лучше всего подходит для обработки запроса пользователя.
 
 Доступные суб-агенты:
 ${agentList}
 
-Ответь ТОЛЬКО именем суб-агента (одно слово/slug). Ничего больше.`,
-    },
-    {
-      role: 'user',
-      content: ctx.query,
-    },
-  ];
+Ответь ТОЛЬКО именем суб-агента (одно слово/slug). Ничего больше.`;
 
-  const model = resolveRouterModel(routerModel);
+  const openrouter = createAppOpenRouter();
+  const model = openrouter(resolveRouterModel(routerModel));
 
   try {
-    const { message } = await provider.call({
+    const { text } = await generateText({
       model,
-      messages,
+      system,
+      messages: [{ role: 'user', content: ctx.query }],
       temperature: 0,
     });
 
-    const name = message.content?.trim() ?? '';
+    const name = text.trim();
     console.log(`[Orchestrator] LLM routed to: ${name}`);
     return name;
   } catch (err) {

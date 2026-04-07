@@ -1,6 +1,3 @@
-import type { ToolDefinition } from '@/lib/skills/types';
-import type { LLMProvider } from '@/lib/llm/types';
-
 /* ────────────────────────────────────────────────────────────────────
  * Context passed to every sub-agent
  * ──────────────────────────────────────────────────────────────────── */
@@ -46,7 +43,7 @@ export interface SubAgentConfig {
    */
   model?: string;
 
-  /** Max tool-calling rounds. Default: 5 */
+  /** Max tool-calling rounds (hint for stopWhen budget). Default: 5 */
   maxRounds?: number;
 
   /** Build the system prompt given the current context */
@@ -54,18 +51,6 @@ export interface SubAgentConfig {
 
   /** Build the initial user message from context */
   buildUserMessage(ctx: AgentContext): string;
-
-  /** Tool definitions exposed to the LLM */
-  tools: ToolDefinition[];
-
-  /** Execute a tool call by name */
-  executeSkill(name: string, args: Record<string, unknown>): Promise<string>;
-
-  /**
-   * Try to parse a final result from the assistant's text response.
-   * Return null if the text is not a valid final answer.
-   */
-  parseResult(content: string): Record<string, unknown> | null;
 
   /**
    * Optional: fast routing without LLM.
@@ -75,16 +60,10 @@ export interface SubAgentConfig {
    * - 0.5–0.9 = "likely mine"
    * - 0 = "not mine"
    *
-   * If exactly one agent returns ≥ threshold → route directly (no LLM call).
+   * If exactly one agent returns ≥ threshold → route directly (no LLM).
    * If multiple agents match or none match → fallback to LLM routing.
    */
   match?: (ctx: AgentContext) => number;
-
-  /**
-   * Optional: message to send when tools are exhausted and we need
-   * the model to produce a final answer without tools.
-   */
-  finalNudge?: string;
 }
 
 /* ────────────────────────────────────────────────────────────────────
@@ -92,7 +71,6 @@ export interface SubAgentConfig {
  * ──────────────────────────────────────────────────────────────────── */
 
 export interface RunnerOptions {
-  provider: LLMProvider;
   agent: SubAgentConfig;
   ctx: AgentContext;
   send: AgentEventSink;

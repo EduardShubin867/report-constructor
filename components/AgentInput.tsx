@@ -1,11 +1,36 @@
 'use client';
 
-import { useState, useRef, KeyboardEvent } from 'react';
+import {
+  ArrowRight,
+  Braces,
+  CarFront,
+  ChartColumn,
+  Check,
+  CircleAlert,
+  CircleCheckBig,
+  CircleStop,
+  FileText,
+  FlaskConical,
+  History,
+  LoaderCircle,
+  MapPinned,
+  MessageSquareMore,
+  RefreshCw,
+  Search,
+  SlidersHorizontal,
+  Sparkles,
+  TrendingUp,
+  Trophy,
+  Users,
+  WandSparkles,
+  Zap,
+} from 'lucide-react';
+import { useState, useRef, useEffect, useMemo, type ReactNode, type KeyboardEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { AgentResponse, SSEEvent } from '@/app/api/agent/route';
 import type { QueryResult } from '@/app/api/query/route';
 import SqlHighlight from './SqlHighlight';
-import AgentStepper from './AgentStepper';
+import AgentStepper, { type StepStatus } from './AgentStepper';
 import { BASE_PATH } from '@/lib/constants';
 
 const MAX_RETRIES = 2;
@@ -23,7 +48,7 @@ const SKILL_LABELS: Record<string, string> = {
 /* Detail messages for skills (user-friendly) */
 const SKILL_DETAILS: Record<string, (args: Record<string, unknown>) => string> = {
   lookup_dg: (a) => `Ищу ДГ${a.query ? `: ${String(a.query).slice(0, 40)}` : ''}`,
-  lookup_territory: (a) => `Ищу территорию${a.query ? `: ${String(a.query).slice(0, 40)}` : ''}`,
+  lookup_territory: (a) => `Ищу территорию${(a.search ?? a.query) ? `: ${String(a.search ?? a.query).slice(0, 40)}` : ''}`,
   list_column_values: (a) => `Просматриваю значения${a.column ? ` «${a.column}»` : ''}`,
   get_krm_krp_values: () => 'Загружаю справочники КРМ/КРП',
   validate_query: () => 'Проверяю корректность запроса',
@@ -36,120 +61,130 @@ export interface AgentQueryResult extends QueryResult {
   skillRounds?: number;
 }
 
+export type AgentResultMode = 'replace' | 'append';
+
 interface AgentInputProps {
-  onResult: (result: AgentQueryResult, queryText: string) => void;
+  onResult: (result: AgentQueryResult, queryText: string, mode: AgentResultMode) => void;
   disabled?: boolean;
 }
 
 type Phase = 'idle' | 'thinking' | 'validating' | 'retrying' | 'self-checking' | 'done' | 'error';
 
 const fade = { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -4 }, transition: { duration: 0.15 } };
+const welcomeIconProps = { className: 'h-5 w-5', strokeWidth: 1.8 } as const;
+const stepIconProps = { className: 'h-4 w-4', strokeWidth: 2 } as const;
 
 /* ── Example queries for welcome screen ────────────────────────── */
 const EXAMPLE_QUERIES = [
   {
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-1.997M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
-      </svg>
-    ),
+    icon: <Users {...welcomeIconProps} />,
     title: 'Отчёт по агентам',
     query: 'Количество договоров и сумма премий по каждому агенту за прошлый месяц',
   },
   {
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
-      </svg>
-    ),
+    icon: <ChartColumn {...welcomeIconProps} />,
     title: 'Динамика премий',
     query: 'Динамика премий по месяцам за текущий год',
   },
   {
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 18.75h-9m9 0a3 3 0 013 3h-15a3 3 0 013-3m9 0v-3.375c0-.621-.503-1.125-1.125-1.125h-.871M7.5 18.75v-3.375c0-.621.504-1.125 1.125-1.125h.872m5.007 0H9.497m5.007 0a7.454 7.454 0 01-.982-3.172M9.497 14.25a7.454 7.454 0 00.981-3.172M5.25 4.236c-.982.143-1.954.317-2.916.52A6.003 6.003 0 007.73 9.728M5.25 4.236V4.5c0 2.108.966 3.99 2.48 5.228M5.25 4.236V2.721C7.456 2.41 9.71 2.25 12 2.25c2.291 0 4.545.16 6.75.47v1.516M18.75 4.236c.982.143 1.954.317 2.916.52A6.003 6.003 0 0016.27 9.728M18.75 4.236V4.5c0 2.108-.966 3.99-2.48 5.228m0 0a6.003 6.003 0 01-5.54 0" />
-      </svg>
-    ),
+    icon: <Trophy {...welcomeIconProps} />,
     title: 'Топ агентов',
     query: 'Топ-20 агентов по заработанной марже',
   },
   {
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-      </svg>
-    ),
+    icon: <FileText {...welcomeIconProps} />,
     title: 'По конкретному ДГ',
     query: 'Данные по 150 ДГ за текущий год',
   },
   {
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
-      </svg>
-    ),
+    icon: <MapPinned {...welcomeIconProps} />,
     title: 'По территориям',
     query: 'Распределение договоров по территориям в Москве',
   },
   {
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 18.75a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 01-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h1.125c.621 0 1.125-.504 1.125-1.125v-3m0 0V6.375c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125" />
-      </svg>
-    ),
+    icon: <CarFront {...welcomeIconProps} />,
     title: 'КБМ и тарифы',
     query: 'Средний КБМ и тариф в разрезе марок автомобилей',
   },
 ];
 
+const POPULAR_QUERY_ICON = <TrendingUp {...welcomeIconProps} />;
+
+function truncateWelcomeTitle(text: string, max: number): string {
+  const t = text.trim();
+  if (t.length <= max) return t;
+  return `${t.slice(0, max - 1)}…`;
+}
+
+type WelcomeCard = { key: string; title: string; query: string; icon: ReactNode };
+
 /* ── Stepper step definitions ──────────────────────────────────── */
 const STEPPER_STEPS = [
   {
     label: 'Анализ',
-    icon: (
-      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-      </svg>
-    ),
+    icon: <Sparkles {...stepIconProps} />,
   },
   {
     label: 'Уточнение',
-    icon: (
-      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-      </svg>
-    ),
+    icon: <Search {...stepIconProps} />,
   },
   {
     label: 'Построение',
-    icon: (
-      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-      </svg>
-    ),
+    icon: <Braces {...stepIconProps} />,
   },
   {
     label: 'Выполнение',
-    icon: (
-      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-      </svg>
-    ),
+    icon: <Zap {...stepIconProps} />,
   },
   {
     label: 'Готово',
-    icon: (
-      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    ),
+    icon: <CircleCheckBig {...stepIconProps} />,
   },
 ];
 
 /* Skills that map to step 1 (Уточнение) — i.e. data gathering tools */
 const DATA_SKILLS = new Set(['lookup_dg', 'lookup_territory', 'list_column_values', 'get_krm_krp_values', 'read_instruction']);
+
+const BUILD_STEP_INDEX = 2;
+const EXECUTION_STEP_INDEX = 3;
+const FINAL_STEP_INDEX = STEPPER_STEPS.length - 1;
+
+function buildStepStatuses(activeIndex: number): StepStatus[] {
+  return STEPPER_STEPS.map((_, idx) => {
+    if (idx < activeIndex) return 'done';
+    if (idx === activeIndex) return 'active';
+    return 'pending';
+  });
+}
+
+function looksLikeDiagnosticExplanation(text: string): boolean {
+  return /(ошибк|не удалось|невозможно|несуществующ|не найден|не найдены|связана с|в таблице используются значения|поле\s+[«"][^«"]+[»"]|колонк\w+|данные\s+за\s+прошл\w+\s+\w+\s+отсутствуют|нет\s+договоров)/i.test(text);
+}
+
+function formatRecordCount(count: number): string {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) return `${count.toLocaleString('ru-RU')} запись`;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) {
+    return `${count.toLocaleString('ru-RU')} записи`;
+  }
+  return `${count.toLocaleString('ru-RU')} записей`;
+}
+
+function normalizeSuccessfulExplanation(explanation: string, rowCount: number): string {
+  const trimmed = explanation.trim();
+  if (!trimmed) {
+    return `Отчёт сформирован. В выборке ${formatRecordCount(rowCount)}.`;
+  }
+  if (!looksLikeDiagnosticExplanation(trimmed)) {
+    return trimmed;
+  }
+  return `Отчёт сформирован. В выборке ${formatRecordCount(rowCount)}.`;
+}
+
+function isRecoverableSqlSchemaError(text: string): boolean {
+  return /(invalid column name|invalid object name|ambiguous column name|multi-part identifier .* could not be bound|неверное имя столбца|неверное имя объекта|не удалось привязать multipart identifier|ошибка валидации: недопустимые таблицы)/i.test(text);
+}
 
 export default function AgentInput({ onResult, disabled }: AgentInputProps) {
   const [query, setQuery] = useState('');
@@ -161,23 +196,83 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
   const [showSql, setShowSql] = useState(false);
   const [skillRounds, setSkillRounds] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const activeRunControllerRef = useRef<AbortController | null>(null);
 
   /* ── Stepper state ─────────────────────────────────────────────── */
   const [activeStep, setActiveStep] = useState(0);
+  const [stepStatuses, setStepStatuses] = useState<StepStatus[]>(() => buildStepStatuses(0));
   const [stepDetail, setStepDetail] = useState('');
   const [isRetrying, setIsRetrying] = useState(false);
-  const [retryCount, setRetryCount] = useState(0);
-  const [hadDataSkills, setHadDataSkills] = useState(false);
+  const [popularItems, setPopularItems] = useState<{ query: string; count: number }[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`${BASE_PATH}/api/agent/popular-queries?limit=6&days=30`);
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as { items?: { query: string; count: number }[] };
+        if (cancelled || !Array.isArray(data.items)) return;
+        setPopularItems(data.items);
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      activeRunControllerRef.current?.abort();
+    };
+  }, []);
+
+  const welcomeCards = useMemo((): WelcomeCard[] => {
+    const popularCards: WelcomeCard[] = popularItems.slice(0, 3).map((item, i) => ({
+      key: `popular-${i}-${item.query.slice(0, 48)}`,
+      title: truncateWelcomeTitle(item.query, 52),
+      query: item.query,
+      icon: POPULAR_QUERY_ICON,
+    }));
+    const staticNeeded =
+      popularCards.length === 0 ? EXAMPLE_QUERIES.length : Math.max(0, 6 - popularCards.length);
+    const staticCards: WelcomeCard[] = EXAMPLE_QUERIES.slice(0, staticNeeded).map(ex => ({
+      key: `ex-${ex.title}`,
+      title: ex.title,
+      query: ex.query,
+      icon: ex.icon,
+    }));
+    return [...popularCards, ...staticCards];
+  }, [popularItems]);
 
   const isRunning = phase === 'thinking' || phase === 'validating' || phase === 'retrying' || phase === 'self-checking';
   const isIterating = !!lastSql && phase === 'done';
 
+  function setStepperState(nextStep: number, detailText: string) {
+    setActiveStep(nextStep);
+    setStepStatuses(buildStepStatuses(nextStep));
+    setStepDetail(detailText);
+  }
+
+  function isAbortError(error: unknown): boolean {
+    return error instanceof Error && error.name === 'AbortError';
+  }
+
   /** Read SSE stream from /api/agent and return the AgentResponse */
-  async function _callAgent(text: string, prevSql: string | undefined, retryError?: string): Promise<AgentResponse> {
+  async function _callAgent(
+    text: string,
+    prevSql: string | undefined,
+    retryCount: number,
+    signal: AbortSignal,
+    retryError?: string,
+  ): Promise<AgentResponse> {
     const res = await fetch(`${BASE_PATH}/api/agent`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query: text, previousSql: prevSql, retryError }),
+      signal,
     });
 
     if (!res.ok) {
@@ -213,12 +308,15 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
         switch (event.type) {
           case 'phase':
             if (event.phase === 'thinking') {
-              setPhase('thinking');
-              setActiveStep(0);
-              setStepDetail('Анализирую ваш запрос…');
+              if (retryCount === 0) {
+                setPhase('thinking');
+                setStepperState(0, 'Анализирую ваш запрос…');
+              }
             } else if (event.phase === 'finalizing') {
-              setActiveStep(2);
-              setStepDetail('Формирую SQL-запрос…');
+              setStepperState(
+                BUILD_STEP_INDEX,
+                retryCount > 0 ? 'Собираю исправленный SQL-запрос…' : 'Формирую SQL-запрос…',
+              );
             }
             break;
           case 'skill': {
@@ -226,13 +324,10 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
             const args = event.args as Record<string, unknown>;
 
             if (DATA_SKILLS.has(skillName)) {
-              setHadDataSkills(true);
-              setActiveStep(1);
               const detailFn = SKILL_DETAILS[skillName];
-              setStepDetail(detailFn ? detailFn(args) : SKILL_LABELS[skillName] ?? skillName);
+              setStepperState(1, detailFn ? detailFn(args) : SKILL_LABELS[skillName] ?? skillName);
             } else if (skillName === 'validate_query') {
-              setActiveStep(2);
-              setStepDetail('Проверяю корректность запроса…');
+              setStepperState(BUILD_STEP_INDEX, 'Проверяю корректность запроса…');
             }
             break;
           }
@@ -251,52 +346,61 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
     return result;
   }
 
-  async function _run(text: string, prevSql: string | undefined, retry: number, retryError?: string): Promise<void> {
+  async function _run(
+    text: string,
+    prevSql: string | undefined,
+    retry: number,
+    signal: AbortSignal,
+    resultMode: AgentResultMode,
+    retryError?: string,
+  ): Promise<void> {
     if (retry > 0) {
       setPhase('retrying');
       setIsRetrying(true);
-      setRetryCount(retry);
-      setActiveStep(0);
       const retryLabel = retryError?.startsWith('EMPTY:')
         ? `Запрос вернул 0 строк — корректирую (${retry}/${MAX_RETRIES})`
         : `Исправляю ошибку (${retry}/${MAX_RETRIES})`;
-      setStepDetail(retryLabel);
+      setStepperState(BUILD_STEP_INDEX, retryLabel);
     } else {
       setPhase('thinking');
       setIsRetrying(false);
-      setRetryCount(0);
+      setStepperState(0, 'Анализирую ваш запрос…');
     }
 
-    const agentData = await _callAgent(text, prevSql, retryError);
+    const agentData = await _callAgent(text, prevSql, retry, signal, retryError);
 
     setLastSql(agentData.sql || null);
-    setExplanation(agentData.explanation);
     setSuggestions(agentData.suggestions ?? []);
     setSkillRounds(agentData._skillRounds ?? 0);
 
     // Agent couldn't build SQL — show explanation only
     if (!agentData.sql) {
-      setActiveStep(4);
-      setStepDetail('');
+      setIsRetrying(false);
+      setExplanation(agentData.explanation);
+      setStepperState(FINAL_STEP_INDEX, '');
       setPhase('done');
       return;
     }
 
     // Step 3: executing SQL
     setPhase('validating');
-    setActiveStep(3);
-    setStepDetail('Выполняю запрос к базе данных…');
+    setStepperState(EXECUTION_STEP_INDEX, 'Выполняю запрос к базе данных…');
 
     const queryRes = await fetch(`${BASE_PATH}/api/query`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sql: agentData.sql }),
+      signal,
     });
     const queryData: QueryResult & { error?: string } = await queryRes.json();
 
     if (!queryRes.ok) {
       const execError = queryData.error ?? 'Ошибка выполнения запроса';
-      if (retry < MAX_RETRIES && agentData.canRetry !== false) {
-        return _run(text, agentData.sql, retry + 1, execError);
+      const forceRetry = isRecoverableSqlSchemaError(execError);
+      if (retry < MAX_RETRIES && (agentData.canRetry !== false || forceRetry)) {
+        const retryHint = forceRetry
+          ? `${execError}\n\nПодсказка: если ошибка связана с городом, территорией или территориальным регионом, попробуй lookup_territory и фильтрацию через LEFT JOIN [dbo].[Территории] AS ter ON m.[ID_ТерриторияИспользованияТС] = ter.[ID] вместо прямого обращения к колонке основной таблицы.`
+          : execError;
+        return _run(text, agentData.sql, retry + 1, signal, resultMode, retryHint);
       }
       throw new Error(execError);
     }
@@ -308,23 +412,34 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
         text,
         agentData.sql,
         retry + 1,
-        'EMPTY: Запрос выполнился успешно, но вернул 0 строк. Вероятно, условия WHERE слишком жёсткие или значения фильтров неверны (неправильный код ДГ, формат даты, регистр). Проверь значения через скиллы и исправь запрос.',
+        signal,
+        resultMode,
+        'EMPTY: Запрос выполнился успешно, но вернул 0 строк. Вероятно, условия WHERE слишком жёсткие или значения фильтров неверны (неправильный код ДГ, формат даты, регистр). Если запрос связан с городом, территорией или территориальным регионом, проверь значения через lookup_territory и попробуй фильтрацию через JOIN с [dbo].[Территории] вместо прямого фильтра по основной таблице.',
       );
     }
 
     // Step 4: done
-    setActiveStep(4);
-    setStepDetail('');
+    const finalExplanation = queryData.rowCount > 0
+      ? normalizeSuccessfulExplanation(agentData.explanation, queryData.rowCount)
+      : agentData.explanation;
+    setIsRetrying(false);
+    setExplanation(finalExplanation);
+    setStepperState(FINAL_STEP_INDEX, '');
     setPhase('done');
-    onResult({ ...queryData, sql: agentData.sql, explanation: agentData.explanation, skillRounds: agentData._skillRounds }, text);
+    onResult({
+      ...queryData,
+      sql: agentData.sql,
+      explanation: finalExplanation,
+      skillRounds: agentData._skillRounds,
+    }, text, resultMode);
   }
 
-  async function runQuery(text: string, prevSql?: string) {
+  async function runQuery(text: string, prevSql?: string, resultMode: AgentResultMode = 'replace') {
     if (!text.trim() || isRunning || disabled) return;
+    const controller = new AbortController();
+    activeRunControllerRef.current = controller;
     setError(null);
-    setHadDataSkills(false);
-    setActiveStep(0);
-    setStepDetail('Анализирую ваш запрос…');
+    setStepperState(0, 'Анализирую ваш запрос…');
 
     if (!prevSql) {
       setLastSql(null);
@@ -332,14 +447,49 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
       setSuggestions([]);
     }
 
-    try { await _run(text, prevSql, 0); }
-    catch (e) { setPhase('error'); setError(e instanceof Error ? e.message : 'Неизвестная ошибка'); }
+    try {
+      await _run(text, prevSql, 0, controller.signal, resultMode);
+    }
+    catch (e) {
+      if (isAbortError(e)) {
+        setPhase('idle');
+        setIsRetrying(false);
+        setError(null);
+        setActiveStep(0);
+        setStepStatuses(buildStepStatuses(0));
+        setStepDetail('');
+        return;
+      }
+      setIsRetrying(false);
+      setPhase('error');
+      setError(e instanceof Error ? e.message : 'Неизвестная ошибка');
+    } finally {
+      if (activeRunControllerRef.current === controller) {
+        activeRunControllerRef.current = null;
+      }
+    }
   }
 
-  const handleSubmit = () => runQuery(query, lastSql ?? undefined);
-  const handleSuggestion = (s: string) => { setQuery(s); runQuery(s, lastSql ?? undefined); };
-  const handleExample = (q: string) => { setQuery(q); runQuery(q); };
-  const reset = () => { setPhase('idle'); setError(null); setActiveStep(0); setStepDetail(''); };
+  const handleSubmit = () => runQuery(query, undefined, 'replace');
+  const handleRefineCurrent = () => {
+    if (!lastSql) return;
+    runQuery(query, lastSql, 'append');
+  };
+  const handleSuggestion = (s: string) => { setQuery(s); runQuery(s, undefined, 'replace'); };
+  const handleExample = (q: string) => { setQuery(q); runQuery(q, undefined, 'replace'); };
+  const handleStop = () => {
+    activeRunControllerRef.current?.abort();
+  };
+  const reset = () => {
+    activeRunControllerRef.current?.abort();
+    activeRunControllerRef.current = null;
+    setPhase('idle');
+    setError(null);
+    setIsRetrying(false);
+    setActiveStep(0);
+    setStepStatuses(buildStepStatuses(0));
+    setStepDetail('');
+  };
   const showWelcome = !lastSql && phase === 'idle';
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -347,99 +497,132 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* ── Input card ─────────────────────────────────────────────── */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-        {/* Iteration badge */}
-        <AnimatePresence>
-          {isIterating && (
-            <motion.div {...fade}
-              className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-purple-50 border border-purple-200 text-xs text-purple-700">
-              <svg className="w-3.5 h-3.5 shrink-0 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              <span>Режим уточнения — ваш запрос создаст новую версию отчёта</span>
-            </motion.div>
-          )}
-        </AnimatePresence>
+    <div className="flex flex-col gap-6">
+      <section className="relative">
+        <div
+          className={`ui-panel rounded-[28px] p-5 transition-all duration-300 sm:p-6 ${
+            isIterating ? 'border-primary/25' : ''
+          }`}
+        >
+          <AnimatePresence>
+            {isIterating && (
+              <motion.div
+                {...fade}
+                className="ui-chip-accent mb-4 flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium"
+              >
+                <RefreshCw className="h-3.5 w-3.5 shrink-0 text-primary" strokeWidth={2.1} />
+                <span>Текущий отчёт можно уточнить отдельной кнопкой, а обычный запуск создаст новый отчёт</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-        {/* Textarea + button */}
-        <div className="relative">
-          <textarea
-            ref={textareaRef}
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={isIterating
-              ? 'Уточните отчёт: добавь колонку, измени группировку, отфильтруй по…'
-              : 'Опишите нужный отчёт на естественном языке…'}
-            rows={2}
-            disabled={isRunning || disabled}
-            className="w-full px-4 py-3 pr-28 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent focus:bg-white resize-none disabled:opacity-60 transition-all"
-          />
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={!query.trim() || isRunning || disabled}
-            className="absolute right-2 bottom-2 flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white text-xs font-medium rounded-md hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            {isRunning ? (
-              <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-            ) : null}
-            {isRunning
-              ? (phase === 'retrying' ? 'Исправляю…' : phase === 'self-checking' ? 'Проверяю…' : phase === 'thinking' ? 'Генерирую…' : 'Выполняю…')
-              : isIterating ? 'Уточнить' : 'Анализировать'}
-            {!isRunning && <span className="text-purple-300 text-[10px] ml-0.5">⌘↵</span>}
-          </button>
-        </div>
-
-        {/* ── Stepper (while running) ──────────────────────────────── */}
-        <AnimatePresence>
-          {isRunning && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.25 }}
-              className="overflow-hidden"
-            >
-              <AgentStepper
-                steps={STEPPER_STEPS}
-                activeStep={activeStep}
-                detail={stepDetail}
-                isRetrying={isRetrying}
+          <div className="flex items-start gap-3">
+            <WandSparkles className="mt-1 h-[1.35rem] w-[1.35rem] shrink-0 text-primary/75" strokeWidth={2.1} />
+            <div className="min-w-0 flex-1">
+              <textarea
+                ref={textareaRef}
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={isIterating
+                  ? 'Новый вопрос или уточнение текущего отчёта: колонка, группировка, фильтры…'
+                  : 'Например: сравни премии по регионам за прошлый квартал…'}
+                rows={2}
+                disabled={isRunning || disabled}
+                className="min-h-[84px] w-full resize-none border-none bg-transparent font-headline text-lg font-medium leading-8 text-on-surface placeholder:text-outline-variant/75 focus:outline-none focus:ring-0 disabled:opacity-60 md:text-[1.15rem]"
               />
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+              <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-wrap gap-2">
+                  <span className="ui-chip inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-medium">
+                    <History className="h-3.5 w-3.5" strokeWidth={2.1} />
+                    Ctrl/⌘ + Enter — запуск
+                  </span>
+                </div>
+                <div className="flex flex-col gap-2 self-start sm:flex-row sm:items-center sm:self-auto">
+                  {isRunning && (
+                    <button
+                      type="button"
+                      onClick={handleStop}
+                      className="ui-button-secondary flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-on-surface active:scale-[0.98]"
+                    >
+                      <CircleStop className="h-4 w-4 text-on-surface" strokeWidth={2.1} />
+                      Остановить
+                    </button>
+                  )}
+                  {isIterating && (
+                    <button
+                      type="button"
+                      onClick={handleRefineCurrent}
+                      disabled={!query.trim() || isRunning || disabled}
+                      className="ui-button-secondary flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <SlidersHorizontal className="h-4 w-4 text-primary" strokeWidth={2.1} />
+                      Уточнить текущий
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleSubmit}
+                    disabled={!query.trim() || isRunning || disabled}
+                    className="ui-button-primary group flex items-center gap-2 rounded-xl px-6 py-2.5 font-headline text-sm font-semibold active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100"
+                  >
+                    {isRunning ? (
+                      <LoaderCircle className="h-4 w-4 animate-spin" strokeWidth={2.2} />
+                    ) : (
+                      <ArrowRight className="h-4 w-4 text-on-primary transition-transform group-hover:translate-x-0.5" strokeWidth={2.2} />
+                    )}
+                    {isRunning
+                      ? (phase === 'retrying' ? 'Исправляю…' : phase === 'self-checking' ? 'Проверяю…' : phase === 'thinking' ? 'Генерирую…' : 'Выполняю…')
+                      : isIterating ? 'Новый запрос' : 'Анализировать'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
 
-      {/* ── Welcome: example cards ─────────────────────────────────── */}
+      <AnimatePresence>
+        {isRunning && (
+          <motion.section
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.25 }}
+            className="ui-panel-muted overflow-hidden rounded-3xl p-5 sm:p-6"
+          >
+            <AgentStepper
+              steps={STEPPER_STEPS}
+              activeStep={activeStep}
+              statuses={stepStatuses}
+              detail={stepDetail}
+              isRetrying={isRetrying}
+            />
+          </motion.section>
+        )}
+      </AnimatePresence>
+
       <AnimatePresence>
         {showWelcome && (
           <motion.div {...fade}>
-            <div className="text-center mb-5 mt-2">
-              <h2 className="text-base font-semibold text-gray-800">Что вы хотите узнать?</h2>
-              <p className="text-sm text-gray-400 mt-1">Выберите пример или опишите запрос своими словами</p>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {EXAMPLE_QUERIES.map(ex => (
+            <p className="mb-3 text-center text-xs font-medium uppercase tracking-[0.12em] text-on-surface-variant/70">
+              Или выберите готовый пример ниже
+            </p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {welcomeCards.map(ex => (
                 <button
-                  key={ex.title}
+                  key={ex.key}
                   type="button"
                   onClick={() => handleExample(ex.query)}
                   disabled={isRunning}
-                  className="group flex flex-col items-start gap-2 p-4 bg-white rounded-xl border border-gray-200 shadow-sm hover:border-purple-300 hover:shadow-md hover:shadow-purple-100/50 transition-all duration-200 text-left disabled:opacity-50"
+                  className="ui-panel group flex flex-col items-start gap-2 rounded-2xl p-4 text-left transition-all duration-300 hover:-translate-y-0.5 hover:border-outline-variant/30 hover:bg-white disabled:opacity-50"
                 >
-                  <div className="w-9 h-9 rounded-lg bg-purple-50 text-purple-500 flex items-center justify-center group-hover:bg-purple-100 group-hover:text-purple-600 transition-colors">
+                  <div className="ui-chip-accent flex h-9 w-9 items-center justify-center rounded-xl transition-colors group-hover:bg-primary-fixed">
                     {ex.icon}
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-gray-800 group-hover:text-purple-700 transition-colors">{ex.title}</p>
-                    <p className="text-xs text-gray-400 mt-0.5 line-clamp-2">{ex.query}</p>
+                    <p className="font-headline text-sm font-semibold text-on-surface">{ex.title}</p>
+                    <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-on-surface-variant">{ex.query}</p>
                   </div>
                 </button>
               ))}
@@ -453,14 +636,12 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
         {/* Error */}
         {phase === 'error' && error && (
           <motion.div {...fade}
-            className="flex items-center justify-between bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
+            className="flex items-center justify-between rounded-xl border border-error/30 bg-error-container/50 px-4 py-3 text-sm text-error">
             <div className="flex items-center gap-2">
-              <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+              <CircleAlert className="h-4 w-4 shrink-0" strokeWidth={2.1} />
               {error}
             </div>
-            <button type="button" onClick={reset} className="text-xs font-medium text-red-600 hover:text-red-800 underline-offset-2 hover:underline shrink-0">
+            <button type="button" onClick={reset} className="shrink-0 text-xs font-semibold text-error underline-offset-2 hover:underline">
               Повторить
             </button>
           </motion.div>
@@ -468,32 +649,25 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
 
         {/* Success / Agent message */}
         {phase === 'done' && explanation && (
-          <motion.div {...fade} className="flex flex-col gap-3">
-            {/* ── Explanation card ─────────────────────────────────── */}
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-              <div className={`flex items-start gap-3 px-4 py-3 ${lastSql ? 'bg-emerald-50/60' : 'bg-amber-50/60'}`}>
+          <motion.div {...fade} className="flex flex-col gap-2">
+            <div className="ui-panel overflow-hidden rounded-xl">
+              <div className={`flex items-start gap-3 px-4 py-3 ${lastSql ? 'bg-emerald-500/8' : 'bg-tertiary-fixed/22'}`}>
                 {lastSql ? (
-                  <div className="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center shrink-0 mt-0.5">
-                    <svg className="w-4 h-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
+                  <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-500/15">
+                    <Check className="h-3.5 w-3.5 text-emerald-600" strokeWidth={2.6} />
                   </div>
                 ) : (
-                  <div className="w-7 h-7 rounded-full bg-amber-100 flex items-center justify-center shrink-0 mt-0.5">
-                    <svg className="w-4 h-4 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-3 3v-3z" />
-                    </svg>
+                  <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-tertiary-fixed/50">
+                    <MessageSquareMore className="h-3.5 w-3.5 text-tertiary" strokeWidth={2} />
                   </div>
                 )}
-                <div className="flex-1">
-                  <p className={`text-sm leading-relaxed ${lastSql ? 'text-emerald-800' : 'text-amber-900'}`}>
+                <div className="min-w-0 flex-1">
+                  <p className={`text-[13px] leading-6 ${lastSql ? 'text-emerald-900' : 'text-on-tertiary-fixed-variant'}`}>
                     {explanation}
                   </p>
                   {lastSql && skillRounds > 0 && (
-                    <p className="mt-1.5 text-xs text-emerald-600/70 flex items-center gap-1">
-                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-                      </svg>
+                    <p className="mt-1 flex items-center gap-1 text-[11px] text-emerald-700/80">
+                      <FlaskConical className="h-3 w-3" strokeWidth={2.2} />
                       Использовано справочников: {skillRounds}
                     </p>
                   )}
@@ -502,9 +676,9 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
 
               {/* SQL toggle */}
               {lastSql && (
-                <div className="px-4 py-2 border-t border-gray-100">
+                <div className="border-t border-outline-variant/10 px-3 py-1.5">
                   <button type="button" onClick={() => setShowSql(s => !s)}
-                    className="text-[11px] text-gray-400 hover:text-gray-500 transition-colors">
+                    className="ui-button-ghost rounded-md px-2 py-1 text-[11px]">
                     {showSql ? 'Скрыть SQL' : 'SQL'}
                   </button>
                   <AnimatePresence>
@@ -521,12 +695,14 @@ export default function AgentInput({ onResult, disabled }: AgentInputProps) {
 
             {/* ── Suggestions — next steps ─────────────────────────── */}
             {suggestions.length > 0 && (
-              <motion.div {...fade} className="flex flex-wrap gap-2">
-                <span className="text-xs text-gray-400 self-center mr-1">Продолжить:</span>
+              <motion.div {...fade} className="flex flex-wrap items-center gap-1.5">
+                <span className="mr-1 self-center text-[11px] font-medium uppercase tracking-[0.08em] text-on-surface-variant/70">
+                  Дальше
+                </span>
                 {suggestions.map(s => (
                   <button key={s} type="button" onClick={() => handleSuggestion(s)} disabled={isRunning}
                     title={s}
-                    className="text-xs text-purple-700 bg-purple-50 border border-purple-200 rounded-full px-3 py-1.5 hover:bg-purple-100 transition-colors disabled:opacity-50 truncate max-w-xs">
+                    className="ui-chip-accent max-w-xs truncate rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-primary-fixed disabled:opacity-50">
                     {s}
                   </button>
                 ))}

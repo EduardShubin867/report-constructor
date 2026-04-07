@@ -6,7 +6,7 @@
  */
 
 import type { SubAgentConfig, AgentContext } from './types';
-import { AGENT_TOOLS, executeSkill, getTextInstructionsCatalog } from '@/lib/skills/registry';
+import { getTextInstructionsCatalog } from '@/lib/skills/registry';
 import { getDataSources } from '@/lib/schema';
 import { schemaToPrompt } from '@/lib/schema/to-prompt';
 
@@ -55,7 +55,7 @@ SELECT ..., AVG(метрика) OVER (ORDER BY период ROWS BETWEEN 2 PRECE
 ### Правила для временного анализа
 
 1. Всегда явно определяй период: YEAR + MONTH, или DATEFROMPARTS для группировки
-2. LAG/LEAD — только в обёртке CTE или подзапросе (нельзя агрегировать с оконными функциями в одном SELECT)
+2. LAG/LEAD — только поверх подзапроса с агрегацией по периоду (нельзя агрегировать с оконными функциями в одном SELECT)
 3. NULLIF(знаменатель, 0) при делении — всегда
 4. ORDER BY в OVER() для LAG/LEAD — по хронологическому ключу (YEAR, MONTH или дате)
 5. PARTITION BY — если анализ по нескольким группам одновременно
@@ -82,12 +82,20 @@ SELECT ..., AVG(метрика) OVER (ORDER BY период ROWS BETWEEN 2 PRECE
 4. Имена колонок и таблиц на кириллице — в [квадратных скобках].
 5. Псевдонимы AS — кириллицей (они станут заголовками в Excel).
 6. Не добавляй TOP — система добавит ограничение автоматически.
-7. CTE (WITH ...) — разрешены и рекомендованы для сложных оконных запросов.
+7. **Не начинай запрос с WITH (CTE).** Валидатор системы принимает только запросы, первый оператор которых — SELECT. Для оконных функций используй подзапрос во FROM (как в примере ниже).
 8. Для относительных дат: DATEADD/DATEDIFF/DATEFROMPARTS от ${today}.
 
-## Пример: динамика премий с ростом MoM
+## Правила для explanation
 
-WITH monthly AS (
+Пиши только смысл для аналитика: какие периоды, метрики, разрез. Не упоминай CTE, подзапросы, валидатор, SELECT в начале запроса, TOP — это внутренние детали.
+
+## Пример: динамика премий с ростом MoM (без WITH — только SELECT)
+
+SELECT [Год], [Месяц], [Договоров], [Премия],
+       LAG([Премия]) OVER (ORDER BY [Год], [Месяц]) AS [ПремияПредМесяц],
+       ROUND(100.0 * ([Премия] - LAG([Премия]) OVER (ORDER BY [Год], [Месяц]))
+             / NULLIF(LAG([Премия]) OVER (ORDER BY [Год], [Месяц]), 0), 2) AS [РостПремииПроцент]
+FROM (
     SELECT YEAR(m.[ДатаЗаключения])  AS [Год],
            MONTH(m.[ДатаЗаключения]) AS [Месяц],
            COUNT(*)                  AS [Договоров],
@@ -95,12 +103,7 @@ WITH monthly AS (
     FROM [dbo].[Журнал_ОСАГО_Маржа] m
     WHERE m.[ДатаЗаключения] >= DATEADD(YEAR, -1, '${today}')
     GROUP BY YEAR(m.[ДатаЗаключения]), MONTH(m.[ДатаЗаключения])
-)
-SELECT [Год], [Месяц], [Договоров], [Премия],
-       LAG([Премия]) OVER (ORDER BY [Год], [Месяц]) AS [ПремияПредМесяц],
-       ROUND(100.0 * ([Премия] - LAG([Премия]) OVER (ORDER BY [Год], [Месяц]))
-             / NULLIF(LAG([Премия]) OVER (ORDER BY [Год], [Месяц]), 0), 2) AS [РостПремииПроцент]
-FROM monthly
+) AS [ПоМесяцам]
 ORDER BY [Год], [Месяц]
 
 ## Формат финального ответа
@@ -138,31 +141,6 @@ function buildUserMessage(ctx: AgentContext): string {
   return query;
 }
 
-function extractJson(text: string): string | null {
-  try { JSON.parse(text); return text; } catch { /* noop */ }
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fenced) { try { JSON.parse(fenced[1]); return fenced[1]; } catch { /* noop */ } }
-  const braces = text.match(/\{[\s\S]*\}/);
-  if (braces) { try { JSON.parse(braces[0]); return braces[0]; } catch { /* noop */ } }
-  return null;
-}
-
-function parseResult(content: string): Record<string, unknown> | null {
-  const jsonStr = extractJson(content);
-  if (jsonStr) {
-    const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
-    if (typeof parsed.sql === 'string' && parsed.sql.trim()) return parsed;
-    if (typeof parsed.explanation === 'string' && parsed.explanation.trim()) {
-      return { sql: '', explanation: parsed.explanation, suggestions: parsed.suggestions ?? [], canRetry: false };
-    }
-  }
-  const trimmed = content.trim();
-  if (trimmed.length > 20) {
-    return { sql: '', explanation: trimmed, suggestions: [], canRetry: false };
-  }
-  return null;
-}
-
 const trendAnalyst: SubAgentConfig = {
   name: 'trend-analyst',
   description: 'Анализ динамики и временных рядов: MoM/YoY сравнения, скользящие средние, оконные функции LAG/LEAD, накопленные итоги. Используй для запросов о росте, трендах, динамике по месяцам/кварталам/годам.',
@@ -175,11 +153,6 @@ const trendAnalyst: SubAgentConfig = {
   },
   buildSystemPrompt,
   buildUserMessage,
-  tools: AGENT_TOOLS,
-  executeSkill,
-  parseResult,
-  finalNudge:
-    'Инструменты больше недоступны. Верни финальный ответ в формате JSON с полями sql, explanation, suggestions. Используй лучший вариант из уже проверенных через validate_query.',
 };
 
 export default trendAnalyst;

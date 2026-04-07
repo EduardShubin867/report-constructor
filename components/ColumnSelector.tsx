@@ -1,5 +1,6 @@
 'use client';
 
+import { ChevronDown } from 'lucide-react';
 import { useState } from 'react';
 import { ALL_COLUMNS } from '@/lib/report-columns';
 
@@ -20,47 +21,45 @@ export default function ColumnSelector({ selected, onChange }: ColumnSelectorPro
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
+    <div className="ui-panel overflow-hidden rounded-2xl">
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between px-5 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-xl transition-colors"
+        className="flex w-full items-center justify-between rounded-2xl px-5 py-3.5 text-sm font-medium text-on-surface transition-colors hover:bg-surface-container-low/70"
       >
         <span>
           Настройка колонок{' '}
-          <span className="ml-1 text-xs font-normal text-gray-400">({selected.length} из {ALL_COLUMNS.length})</span>
+          <span className="ml-1 text-xs font-normal text-on-surface-variant">({selected.length} из {ALL_COLUMNS.length})</span>
         </span>
-        <svg className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
+        <ChevronDown className={`h-4 w-4 text-on-surface-variant transition-transform ${open ? 'rotate-180' : ''}`} strokeWidth={2.2} />
       </button>
 
       {open && (
-        <div className="border-t border-gray-100 px-5 py-4">
-          <div className="flex gap-3 mb-3">
+        <div className="border-t border-outline-variant/10 px-5 py-4">
+          <div className="mb-3 flex gap-3">
             <button
               type="button"
-              className="text-xs text-blue-600 hover:underline"
+              className="ui-button-ghost rounded-lg px-2 py-1 text-xs font-medium text-primary"
               onClick={() => onChange(ALL_COLUMNS.map(c => c.key))}
             >
               Выбрать все
             </button>
             <button
               type="button"
-              className="text-xs text-gray-500 hover:underline"
+              className="ui-button-ghost rounded-lg px-2 py-1 text-xs"
               onClick={() => onChange([])}
             >
               Снять все
             </button>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-2">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
             {ALL_COLUMNS.map(col => (
-              <label key={col.key} className="flex items-center gap-2 cursor-pointer text-sm text-gray-700 hover:text-gray-900">
+              <label key={col.key} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 text-sm text-on-surface transition-colors hover:bg-surface-container-low/60 hover:text-primary">
                 <input
                   type="checkbox"
                   checked={selected.includes(col.key)}
                   onChange={() => toggle(col.key)}
-                  className="accent-blue-600 shrink-0"
+                  className="shrink-0 accent-primary"
                 />
                 <span className="truncate" title={col.label}>{col.label}</span>
               </label>

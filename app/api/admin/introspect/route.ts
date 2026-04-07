@@ -8,7 +8,8 @@
 
 import { NextRequest } from 'next/server';
 import sql from 'mssql';
-import { createOpenRouterProvider } from '@/lib/llm/openrouter';
+import { generateText } from 'ai';
+import { createAppOpenRouter } from '@/lib/llm/openrouter-factory';
 import { getConnection } from '@/lib/schema/store';
 import type { DataSource, StoredConnection } from '@/lib/schema/types';
 
@@ -275,16 +276,14 @@ export async function POST(request: NextRequest) {
     log.push('Отправка данных в LLM для классификации...');
     const prompt = buildLLMPrompt(id, name, schema, conn.dialect, columns, fks);
 
-    const model = process.env.OPENROUTER_AGENT_MODEL ?? process.env.OPENROUTER_MODEL ?? 'google/gemini-2.0-flash-001';
-    const provider = createOpenRouterProvider({ apiKey, siteUrl: process.env.NEXT_PUBLIC_SITE_URL });
+    const modelId = process.env.OPENROUTER_AGENT_MODEL ?? process.env.OPENROUTER_MODEL ?? 'google/gemini-2.0-flash-001';
+    const openrouter = createAppOpenRouter();
 
-    const result = await provider.call({
-      model,
+    const { text: content } = await generateText({
+      model: openrouter(modelId),
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.1,
     });
-
-    const content = result.message.content ?? '';
     log.push('Ответ LLM получен. Парсинг...');
 
     // Extract JSON

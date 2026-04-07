@@ -7,7 +7,7 @@
  */
 
 import type { SubAgentConfig, AgentContext } from './types';
-import { AGENT_TOOLS, executeSkill, getTextInstructionsCatalog } from '@/lib/skills/registry';
+import { getTextInstructionsCatalog } from '@/lib/skills/registry';
 import { getDataSources } from '@/lib/schema';
 import { schemaToPrompt } from '@/lib/schema/to-prompt';
 
@@ -115,6 +115,10 @@ ORDER BY [УбыточностьПроцент] DESC
 
 suggestions — 2–3 логичных продолжения анализа (другой разрез, динамика убыточности, топ убыточных и т.п.).
 
+## Правила для explanation
+
+Только смысл отчёта для пользователя (метрики, период, разрез). Не описывай переписывание SQL, CTE, подзапросы, валидатор или ограничения системы.
+
 ${getTextInstructionsCatalog({
     activeSourceIds: getDataSources().map(ds => ds.id),
     agentName: 'claims-analyst',
@@ -135,31 +139,6 @@ function buildUserMessage(ctx: AgentContext): string {
   return query;
 }
 
-function extractJson(text: string): string | null {
-  try { JSON.parse(text); return text; } catch { /* noop */ }
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fenced) { try { JSON.parse(fenced[1]); return fenced[1]; } catch { /* noop */ } }
-  const braces = text.match(/\{[\s\S]*\}/);
-  if (braces) { try { JSON.parse(braces[0]); return braces[0]; } catch { /* noop */ } }
-  return null;
-}
-
-function parseResult(content: string): Record<string, unknown> | null {
-  const jsonStr = extractJson(content);
-  if (jsonStr) {
-    const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
-    if (typeof parsed.sql === 'string' && parsed.sql.trim()) return parsed;
-    if (typeof parsed.explanation === 'string' && parsed.explanation.trim()) {
-      return { sql: '', explanation: parsed.explanation, suggestions: parsed.suggestions ?? [], canRetry: false };
-    }
-  }
-  const trimmed = content.trim();
-  if (trimmed.length > 20) {
-    return { sql: '', explanation: trimmed, suggestions: [], canRetry: false };
-  }
-  return null;
-}
-
 const claimsAnalyst: SubAgentConfig = {
   name: 'claims-analyst',
   description: 'Анализ убытков и урегулирования ОСАГО: коэффициент убыточности, частота страховых случаев, средние выплаты, сравнение урегулированных и неурегулированных убытков по ДГ, территориям, агентам.',
@@ -172,11 +151,6 @@ const claimsAnalyst: SubAgentConfig = {
   },
   buildSystemPrompt,
   buildUserMessage,
-  tools: AGENT_TOOLS,
-  executeSkill,
-  parseResult,
-  finalNudge:
-    'Инструменты больше недоступны. Верни финальный ответ в формате JSON с полями sql, explanation, suggestions. Используй лучший вариант из уже проверенных через validate_query.',
 };
 
 export default claimsAnalyst;

@@ -1,5 +1,6 @@
 'use client';
 
+import { ChevronDown, LoaderCircle } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 
 interface MultiSelectProps {
@@ -43,59 +44,56 @@ export default function MultiSelect({ options = [], value, onChange, placeholder
     : `Выбрано: ${value.length}`;
 
   return (
-    <div className="relative" ref={ref}>
-      {label && <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>}
+    <div className={`relative ${open ? 'z-30' : ''}`} ref={ref}>
+      {label && <label className="mb-1 block text-sm font-medium text-on-surface">{label}</label>}
       <button
         type="button"
         onClick={() => !loading && setOpen(o => !o)}
         disabled={loading}
-        className={`w-full text-left px-3 py-2 border rounded-md shadow-sm text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 flex justify-between items-center transition-all ${
+        className={`ui-field flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm focus:outline-none ${
           loading
-            ? 'bg-gray-50 border-gray-200 cursor-not-allowed'
-            : 'bg-white border-gray-300'
+            ? 'cursor-not-allowed border-outline-variant/10 bg-surface-container-low text-on-surface-variant/60'
+            : open
+              ? 'border-primary/30'
+              : ''
         }`}
       >
         {loading ? (
-          <span className="flex items-center gap-2 text-gray-400">
-            <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
+          <span className="flex items-center gap-2 text-on-surface-variant/70">
+            <LoaderCircle className="h-3.5 w-3.5 animate-spin" strokeWidth={2.2} />
             Загрузка…
           </span>
         ) : (
           <>
-            <span className={value.length === 0 ? 'text-gray-400' : 'text-gray-900'}>{displayText}</span>
-            <svg className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
+            <span className={value.length === 0 ? 'text-on-surface-variant/70' : 'text-on-surface'}>{displayText}</span>
+            <ChevronDown className={`h-4 w-4 text-on-surface-variant transition-transform ${open ? 'rotate-180' : ''}`} strokeWidth={2.2} />
           </>
         )}
       </button>
 
       {open && (
-        <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-60 flex flex-col">
-          <div className="p-2 border-b border-gray-100">
+        <div className="ui-panel absolute z-[80] mt-2 flex max-h-72 w-full flex-col overflow-hidden rounded-2xl">
+          <div className="border-b border-outline-variant/10 p-2">
             <input
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Поиск..."
-              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="ui-field w-full rounded-xl px-3 py-2 text-sm focus:border-primary/30 focus:outline-none"
               autoFocus
             />
           </div>
-          <div className="flex gap-2 px-2 py-1 border-b border-gray-100">
+          <div className="flex gap-2 border-b border-outline-variant/10 px-2 py-2">
             <button
               type="button"
-              className="text-xs text-blue-600 hover:underline"
+              className="ui-button-ghost rounded-lg px-2 py-1 text-xs font-medium text-primary"
               onClick={() => onChange(filtered)}
             >
               Все
             </button>
             <button
               type="button"
-              className="text-xs text-gray-500 hover:underline"
+              className="ui-button-ghost rounded-lg px-2 py-1 text-xs"
               onClick={() => onChange([])}
             >
               Сбросить
@@ -103,15 +101,15 @@ export default function MultiSelect({ options = [], value, onChange, placeholder
           </div>
           <div className="overflow-y-auto flex-1">
             {filtered.length === 0 && (
-              <div className="px-3 py-2 text-sm text-gray-400">Ничего не найдено</div>
+              <div className="px-3 py-3 text-sm text-on-surface-variant/70">Ничего не найдено</div>
             )}
             {filtered.map(opt => (
-              <label key={opt} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer text-sm">
+              <label key={opt} className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm text-on-surface transition-colors hover:bg-surface-container-low/80">
                 <input
                   type="checkbox"
                   checked={value.includes(opt)}
                   onChange={() => toggle(opt)}
-                  className="accent-blue-600"
+                  className="shrink-0 accent-primary"
                 />
                 <span className="truncate">{opt}</span>
               </label>

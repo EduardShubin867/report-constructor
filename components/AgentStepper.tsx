@@ -1,5 +1,6 @@
 'use client';
 
+import { Check } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export interface StepperStep {
@@ -18,9 +19,9 @@ interface AgentStepperProps {
 }
 
 /* ── Animated orbital ring (SVG arc that spins around the node) ── */
-function OrbitalRing({ color }: { color: 'purple' | 'amber' }) {
-  const stroke = color === 'purple' ? '#a855f7' : '#f59e0b';
-  const strokeFaded = color === 'purple' ? '#a855f720' : '#f59e0b20';
+function OrbitalRing({ color }: { color: 'primary' | 'amber' }) {
+  const stroke = color === 'primary' ? '#6b38d4' : '#f59e0b';
+  const strokeFaded = color === 'primary' ? '#6b38d420' : '#f59e0b20';
   return (
     <motion.svg
       className="absolute -inset-1.5 w-[calc(100%+12px)] h-[calc(100%+12px)]"
@@ -46,22 +47,14 @@ function OrbitalRing({ color }: { color: 'purple' | 'amber' }) {
 /* ── Checkmark with draw-in animation ───────────────────────── */
 function AnimatedCheck() {
   return (
-    <motion.svg
-      className="w-4 h-4"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
+    <motion.div
+      className="flex h-4 w-4 items-center justify-center"
+      initial={{ scale: 0.6, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      transition={{ duration: 0.3, ease: 'easeOut' }}
     >
-      <motion.path
-        d="M5 13l4 4L19 7"
-        initial={{ pathLength: 0 }}
-        animate={{ pathLength: 1 }}
-        transition={{ duration: 0.35, ease: 'easeOut' }}
-      />
-    </motion.svg>
+      <Check className="h-4 w-4" strokeWidth={3} />
+    </motion.div>
   );
 }
 
@@ -79,12 +72,25 @@ export default function AgentStepper({
     return 'pending';
   };
 
-  const ringColor = isRetrying ? 'amber' : 'purple';
+  const getConnectorState = (status: StepStatus) => {
+    if (status === 'done') {
+      return { width: '100%', className: 'bg-emerald-500' };
+    }
+    if (status === 'active') {
+      return {
+        width: '50%',
+        className: isRetrying ? 'bg-amber-400' : 'bg-primary',
+      };
+    }
+    return { width: '0%', className: 'bg-transparent' };
+  };
+
+  const ringColor = isRetrying ? 'amber' : 'primary';
 
   return (
-    <div className="flex flex-col items-center gap-3 py-4">
+    <div className="flex flex-col items-center gap-4 py-2">
       {/* Steps row */}
-      <div className="flex items-center w-full max-w-xl">
+      <div className="flex w-full max-w-3xl items-center">
         {steps.map((step, idx) => {
           const status = getStatus(idx);
           const isLast = idx === steps.length - 1;
@@ -99,17 +105,18 @@ export default function AgentStepper({
 
                   {/* Circle */}
                   <motion.div
+                    initial={false}
                     className={`
-                      relative z-10 w-9 h-9 rounded-full flex items-center justify-center transition-colors duration-300
+                      relative z-10 flex h-10 w-10 items-center justify-center rounded-full transition-colors duration-300
                       ${status === 'done'
                         ? 'bg-emerald-500 text-white'
                         : status === 'active'
                           ? isRetrying
-                            ? 'bg-amber-500 text-white shadow-lg shadow-amber-200/50'
-                            : 'bg-purple-600 text-white shadow-lg shadow-purple-200/50'
+                            ? 'bg-amber-500 text-white shadow-lg shadow-amber-200/40'
+                            : 'bg-primary text-on-primary shadow-lg shadow-primary/30 ring-4 ring-primary-fixed'
                           : status === 'error'
-                            ? 'bg-red-500 text-white'
-                            : 'bg-gray-100 text-gray-400 border border-gray-200'
+                            ? 'bg-error text-on-error'
+                            : 'bg-surface-container-highest text-on-surface-variant'
                       }
                     `}
                     /* Subtle breathing scale on active icon */
@@ -127,14 +134,14 @@ export default function AgentStepper({
                 {/* Label */}
                 <span
                   className={`
-                    text-[11px] font-medium whitespace-nowrap transition-colors duration-300
+                    whitespace-nowrap text-[11px] font-semibold transition-colors duration-300
                     ${status === 'done'
                       ? 'text-emerald-600'
                       : status === 'active'
-                        ? isRetrying ? 'text-amber-700' : 'text-purple-700'
+                        ? isRetrying ? 'text-amber-700' : 'text-primary'
                         : status === 'error'
-                          ? 'text-red-600'
-                          : 'text-gray-400'
+                          ? 'text-error'
+                          : 'text-on-surface-variant opacity-60'
                     }
                   `}
                 >
@@ -144,24 +151,14 @@ export default function AgentStepper({
 
               {/* Connector line */}
               {!isLast && (
-                <div className="flex-1 mx-2 mt-[-18px]">
-                  <div className="h-0.5 bg-gray-200 rounded-full overflow-hidden relative">
-                    {idx < activeStep && (
-                      <motion.div
-                        className="absolute inset-0 bg-emerald-400 rounded-full"
-                        initial={{ width: '0%' }}
-                        animate={{ width: '100%' }}
-                        transition={{ duration: 0.4, ease: 'easeOut' }}
-                      />
-                    )}
-                    {idx === activeStep && (
-                      <motion.div
-                        className={`absolute inset-y-0 left-0 rounded-full ${isRetrying ? 'bg-amber-400' : 'bg-purple-400'}`}
-                        initial={{ width: '0%' }}
-                        animate={{ width: '50%' }}
-                        transition={{ duration: 0.6, ease: 'easeOut' }}
-                      />
-                    )}
+                <div className="mx-2 mt-[-20px] flex-1">
+                  <div className="relative h-0.5 overflow-hidden rounded-full bg-outline-variant/40">
+                    <motion.div
+                      initial={false}
+                      className={`absolute inset-y-0 left-0 rounded-full ${getConnectorState(status).className}`}
+                      animate={{ width: getConnectorState(status).width }}
+                      transition={{ duration: 0.25, ease: 'easeOut' }}
+                    />
                   </div>
                 </div>
               )}
@@ -177,7 +174,7 @@ export default function AgentStepper({
           initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.2 }}
-          className={`text-xs font-medium ${isRetrying ? 'text-amber-600' : 'text-gray-500'}`}
+          className={`text-xs font-medium ${isRetrying ? 'text-amber-600' : 'text-on-surface-variant'}`}
         >
           {detail}
         </motion.p>

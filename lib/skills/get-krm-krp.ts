@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { getPool, queryWithTimeout, TIMEOUT } from '../db';
 import type { ToolSkill } from './types';
 
@@ -6,10 +7,7 @@ const getKrmKrp: ToolSkill = {
   name: 'get_krm_krp_values',
   description:
     'Получить все возможные значения КРМ и КРП из справочников. Используй когда пользователь упоминает конкретные КРМ/КРП значения.',
-  parameters: {
-    type: 'object',
-    properties: {},
-  },
+  inputSchema: z.object({}) as z.ZodType<Record<string, unknown>>,
 
   async execute() {
     const pool = await getPool();

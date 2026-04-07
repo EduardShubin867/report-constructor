@@ -1,5 +1,7 @@
 'use client';
 
+import { resolveAiColumnHeader } from '@/lib/column-header';
+
 function formatCell(value: unknown): string {
   if (value === null || value === undefined) return '';
   if (value instanceof Date) return value.toLocaleDateString('ru-RU');
@@ -58,7 +60,7 @@ export default function SqlResultTable({ data, columns, rowCount, warnings }: Sq
             <tr className="bg-gray-800 text-gray-100">
               {columns.map(col => (
                 <th key={col} className="px-3 py-2.5 text-left font-medium whitespace-nowrap text-xs tracking-wide">
-                  {col}
+                  {resolveAiColumnHeader(col)}
                 </th>
               ))}
             </tr>

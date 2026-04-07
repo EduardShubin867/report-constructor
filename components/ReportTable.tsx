@@ -36,11 +36,11 @@ export default function ReportTable({
 
   if (loading) {
     return (
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="ui-panel overflow-hidden rounded-2xl">
         <div className="animate-pulse">
-          <div className="h-10 bg-gray-100 border-b border-gray-200" />
+          <div className="h-10 border-b border-outline-variant/10 bg-surface-container-low" />
           {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className={`h-9 border-b border-gray-100 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'}`} />
+            <div key={i} className={`h-9 border-b border-outline-variant/10 ${i % 2 === 0 ? 'bg-surface-container-lowest' : 'bg-surface-container-low/50'}`} />
           ))}
         </div>
       </div>
@@ -49,24 +49,24 @@ export default function ReportTable({
 
   if (data.length === 0) {
     return (
-      <div className="rounded-xl border-2 border-dashed border-gray-200 bg-white/60 p-12 text-center">
-        <p className="text-sm text-gray-400">Нет данных по выбранным фильтрам</p>
+      <div className="ui-panel rounded-2xl p-12 text-center">
+        <p className="text-sm text-on-surface-variant">Нет данных по выбранным фильтрам</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+    <div className="ui-panel overflow-hidden rounded-2xl">
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 bg-gray-50/80 text-sm">
-        <span className="text-gray-600">
-          <strong className="text-gray-900">{total.toLocaleString('ru-RU')}</strong> записей
-          {totalPages > 1 && <span className="text-gray-400"> · стр. {page}/{totalPages}</span>}
+      <div className="flex items-center justify-between border-b border-outline-variant/10 bg-surface-container-low/45 px-4 py-2.5 text-sm">
+        <span className="text-on-surface-variant">
+          <strong className="text-on-surface">{total.toLocaleString('ru-RU')}</strong> записей
+          {totalPages > 1 && <span className="text-on-surface-variant/70"> · стр. {page}/{totalPages}</span>}
         </span>
-        <label className="flex items-center gap-1.5 text-xs text-gray-500">
+        <label className="flex items-center gap-1.5 text-xs text-on-surface-variant">
           Строк:
           <select value={pageSize} onChange={e => onPageSizeChange(Number(e.target.value))}
-            className="border border-gray-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500">
+            className="ui-field rounded-lg px-2 py-1 text-xs focus:outline-none">
             {PAGE_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </label>
@@ -76,20 +76,20 @@ export default function ReportTable({
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="bg-gray-800 text-gray-100">
+            <tr className="bg-surface-container-low/80">
               {colDefs.map(col => (
-                <th key={col.key} className="px-3 py-2.5 text-left font-medium whitespace-nowrap text-xs tracking-wide">
+                <th key={col.key} className="whitespace-nowrap px-5 py-3 text-left text-[11px] font-bold uppercase tracking-[0.16em] text-on-surface-variant">
                   {col.label}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-outline-variant/10">
             {data.map((row, i) => (
-              <tr key={row.ID as string ?? i} className="hover:bg-gray-50/80 transition-colors">
+              <tr key={row.ID as string ?? i} className="transition-colors hover:bg-surface-container-low">
                 {colDefs.map(col => (
                   <td key={col.key}
-                    className={`px-3 py-2 text-gray-700 whitespace-nowrap text-xs ${col.type === 'number' ? 'text-right font-mono tabular-nums' : ''}`}>
+                    className={`whitespace-nowrap px-5 py-2.5 text-xs text-on-surface ${col.type === 'number' ? 'text-right font-mono tabular-nums' : ''}`}>
                     {formatValue(row[col.key], col.type)}
                   </td>
                 ))}
@@ -101,9 +101,9 @@ export default function ReportTable({
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between px-4 py-2.5 border-t border-gray-100 bg-gray-50/80">
+        <div className="flex items-center justify-between border-t border-outline-variant/10 bg-surface-container-low px-4 py-2">
           <button type="button" onClick={() => onPageChange(page - 1)} disabled={page <= 1}
-            className="px-3 py-1.5 text-xs text-gray-600 border border-gray-300 rounded-md hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+            className="ui-button-secondary rounded-lg px-3 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-40">
             ← Назад
           </button>
           <div className="flex items-center gap-0.5">
@@ -115,14 +115,14 @@ export default function ReportTable({
               else p = page - 3 + i;
               return (
                 <button key={p} type="button" onClick={() => onPageChange(p)}
-                  className={`w-7 h-7 text-xs rounded-md transition-colors ${p === page ? 'bg-gray-800 text-white' : 'text-gray-600 hover:bg-gray-100'}`}>
+                  className={`h-7 w-7 rounded-lg text-xs transition-colors ${p === page ? 'ui-chip-accent font-semibold text-primary' : 'text-on-surface-variant hover:bg-surface-container-high'}`}>
                   {p}
                 </button>
               );
             })}
           </div>
           <button type="button" onClick={() => onPageChange(page + 1)} disabled={page >= totalPages}
-            className="px-3 py-1.5 text-xs text-gray-600 border border-gray-300 rounded-md hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+            className="ui-button-secondary rounded-lg px-3 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-40">
             Вперёд →
           </button>
         </div>

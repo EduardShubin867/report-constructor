@@ -1,14 +1,15 @@
 'use client';
 
+import { Brain, FileSpreadsheet, FileText } from 'lucide-react';
 import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReportFilters, { FilterValues, FilterOptions, EMPTY_FILTERS } from '@/components/ReportFilters';
 import ColumnSelector from '@/components/ColumnSelector';
 import ReportTable from '@/components/ReportTable';
-import AgentInput, { AgentQueryResult } from '@/components/AgentInput';
+import AgentInput, { AgentQueryResult, type AgentResultMode } from '@/components/AgentInput';
 import DataTable from '@/components/DataTable';
 import VersionTabs from '@/components/VersionTabs';
-import DbStatus from '@/components/DbStatus';
+import ReportsChrome from '@/components/ReportsChrome';
 import { DEFAULT_COLUMNS } from '@/lib/report-columns';
 import { BASE_PATH } from '@/lib/constants';
 
@@ -29,7 +30,6 @@ interface ReportVersion {
   timestamp: number;
 }
 
-/* ───────────────────────── Animation presets ──────────────────────── */
 const fadeSlide = {
   initial: { opacity: 0, y: 12 },
   animate: { opacity: 1, y: 0 },
@@ -37,18 +37,16 @@ const fadeSlide = {
   transition: { duration: 0.2, ease: 'easeOut' as const },
 };
 
-/* ───────────────────────────── Page ──────────────────────────────── */
 export default function ReportsPage() {
   const [tab, setTab] = useState<Tab>('ai');
 
-  // Shared
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
     агенты: [], регионы: [], видыДоговора: [], территории: [], дг: [], крм: [], крп: [],
   });
   const [filtersLoading, setFiltersLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [manualError, setManualError] = useState<string | null>(null);
 
-  // AI state — versioned
   const [versions, setVersions] = useState<ReportVersion[]>([]);
   const [activeVersionIdx, setActiveVersionIdx] = useState(0);
   const [exportingVersionId, setExportingVersionId] = useState<number | null>(null);
@@ -56,7 +54,6 @@ export default function ReportsPage() {
 
   const activeVersion = versions[activeVersionIdx] ?? null;
 
-  // Manual state
   const [filters, setFilters] = useState<FilterValues>(EMPTY_FILTERS);
   const [selectedColumns, setSelectedColumns] = useState<string[]>(DEFAULT_COLUMNS);
   const [result, setResult] = useState<ReportResult | null>(null);
@@ -70,17 +67,16 @@ export default function ReportsPage() {
     fetch(`${BASE_PATH}/api/report/filters`)
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then(setFilterOptions)
-      .catch(() => { /* handled by DbStatus indicator */ })
+      .catch(() => { /* DbStatus */ })
       .finally(() => setFiltersLoading(false));
   }, []);
 
-  /* ── Manual report ──────────────────────────────────────────────── */
   const fetchReport = useCallback(async (
     pg: number, ps: number, f: FilterValues, cols: string[],
   ) => {
-    if (cols.length === 0) { setError('Выберите хотя бы одну колонку'); return; }
+    if (cols.length === 0) { setManualError('Выберите хотя бы одну колонку'); return; }
     setLoading(true);
-    setError(null);
+    setManualError(null);
     try {
       const res = await fetch(`${BASE_PATH}/api/report`, {
         method: 'POST',
@@ -90,7 +86,7 @@ export default function ReportsPage() {
       if (!res.ok) throw new Error((await res.json()).error ?? 'Ошибка сервера');
       setResult(await res.json());
       setHasSearched(true);
-    } catch (e) { setError(e instanceof Error ? e.message : 'Неизвестная ошибка'); }
+    } catch (e) { setManualError(e instanceof Error ? e.message : 'Неизвестная ошибка'); }
     finally { setLoading(false); }
   }, []);
 
@@ -98,9 +94,20 @@ export default function ReportsPage() {
   const handlePageChange = (p: number) => { setPage(p); fetchReport(p, pageSize, filters, selectedColumns); };
   const handlePageSizeChange = (s: number) => { setPageSize(s); setPage(1); fetchReport(1, s, filters, selectedColumns); };
 
-  /* ── AI report (versioned) ────────────────────────────────────── */
-  const handleAgentResult = (r: AgentQueryResult, queryText: string) => {
+  const handleAgentResult = (r: AgentQueryResult, queryText: string, mode: AgentResultMode) => {
+    setAiError(null);
     setVersions(prev => {
+      if (mode === 'replace') {
+        setActiveVersionIdx(0);
+        return [{
+          id: 1,
+          label: 'v1',
+          result: r,
+          query: queryText,
+          timestamp: Date.now(),
+        }];
+      }
+
       const next = [...prev, {
         id: prev.length + 1,
         label: `v${prev.length + 1}`,
@@ -116,13 +123,18 @@ export default function ReportsPage() {
   const handleNewReport = () => {
     setVersions([]);
     setActiveVersionIdx(0);
+    setAiError(null);
     setAiKey(k => k + 1);
   };
 
-  /* ── Export ─────────────────────────────────────────────────────── */
+  const handleCreateReport = () => {
+    setTab('ai');
+    handleNewReport();
+  };
+
   async function handleExportVersion(version: ReportVersion) {
     setExportingVersionId(version.id);
-    setError(null);
+    setAiError(null);
     try {
       const res = await fetch(`${BASE_PATH}/api/query/export`, {
         method: 'POST',
@@ -136,13 +148,13 @@ export default function ReportsPage() {
         download: `ai_report_${version.label}_${new Date().toISOString().slice(0, 10)}.xlsx`,
       });
       document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-    } catch (e) { setError(e instanceof Error ? e.message : 'Неизвестная ошибка'); }
+    } catch (e) { setAiError(e instanceof Error ? e.message : 'Неизвестная ошибка'); }
     finally { setExportingVersionId(null); }
   }
 
   async function handleExportManual() {
     setExporting(true);
-    setError(null);
+    setManualError(null);
     try {
       const res = await fetch(`${BASE_PATH}/api/report/export`, {
         method: 'POST',
@@ -153,81 +165,75 @@ export default function ReportsPage() {
       const url = URL.createObjectURL(await res.blob());
       const a = Object.assign(document.createElement('a'), { href: url, download: `report_${new Date().toISOString().slice(0, 10)}.xlsx` });
       document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-    } catch (e) { setError(e instanceof Error ? e.message : 'Неизвестная ошибка'); }
+    } catch (e) { setManualError(e instanceof Error ? e.message : 'Неизвестная ошибка'); }
     finally { setExporting(false); }
   }
 
-  /* ── Render ─────────────────────────────────────────────────────── */
+  const headerActions = (
+    <>
+      {tab === 'manual' && hasSearched && result && (
+        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="hidden sm:flex">
+          <ExportButton loading={exporting} onClick={handleExportManual} />
+        </motion.div>
+      )}
+    </>
+  );
+
   return (
-    <div className="min-h-screen bg-gray-50/80">
-      {/* ── Header ─────────────────────────────────────────────────── */}
-      <header className="bg-white border-b border-gray-200">
-        <div className="max-w-screen-2xl mx-auto px-4 sm:px-6">
-          <div className="relative flex items-center justify-between h-14">
-            {/* Brand + DB status */}
-            <div className="flex items-center gap-3 z-10">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-600 to-indigo-600 flex items-center justify-center">
-                  <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                      d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                  </svg>
-                </div>
-                <h1 className="text-sm font-bold text-gray-900 tracking-tight">
-                  Умный Аналитик
+    <ReportsChrome
+      tab={tab}
+      onTabChange={setTab}
+      onCreateReport={handleCreateReport}
+      headerActions={headerActions}
+    >
+      <AnimatePresence mode="wait">
+        {tab === 'ai' ? (
+          <motion.div key="ai" {...fadeSlide} className="flex flex-col gap-6">
+            <header className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
+              <div className="max-w-3xl">
+                <span className="ui-chip mb-3 inline-flex rounded-full px-3 py-1 text-[11px] font-medium tracking-wide">
+                  AI-аналитик
+                </span>
+                <h1 className="mb-2 font-headline text-3xl font-bold tracking-tight text-on-surface md:text-4xl">
+                  Как я могу <span className="text-primary">помочь</span> сегодня?
                 </h1>
+                <p className="max-w-2xl text-lg leading-7 text-on-surface-variant">
+                  Задайте вопрос по вашим данным на естественном языке. Ответ появится как готовая таблица без лишних шагов в интерфейсе.
+                </p>
               </div>
-              <div className="hidden sm:block w-px h-5 bg-gray-200" />
-              <DbStatus />
-            </div>
+            </header>
 
-            {/* Tabs — absolutely centered */}
-            <nav className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
-              <TabButton active={tab === 'ai'} onClick={() => setTab('ai')} icon={<AiIcon />}
-                tooltip="Опишите что нужно словами — AI построит отчёт">
-                Свободный запрос
-              </TabButton>
-              <TabButton active={tab === 'manual'} onClick={() => setTab('manual')} icon={<FilterIcon />}
-                tooltip="Выберите фильтры и колонки вручную">
-                Конструктор
-              </TabButton>
-            </nav>
+            <AgentInput key={aiKey} onResult={handleAgentResult} disabled={loading} />
 
-            {/* Header actions */}
-            <div className="flex items-center gap-2">
-              {tab === 'ai' && versions.length > 0 && (
-                <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="flex gap-2">
-                  <button onClick={handleNewReport}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors">
-                    <PlusIcon />
-                    Новый отчёт
-                  </button>
+            <AnimatePresence>
+              {aiError && (
+                <motion.div {...fadeSlide}>
+                  <InlineError message={aiError} />
                 </motion.div>
               )}
-              {tab === 'manual' && hasSearched && result && (
-                <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}>
-                  <ExportButton loading={exporting} onClick={handleExportManual} />
-                </motion.div>
-              )}
-            </div>
-          </div>
-        </div>
-      </header>
+            </AnimatePresence>
 
-      {/* ── Main ───────────────────────────────────────────────────── */}
-      <main className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-6">
-        <AnimatePresence mode="wait">
-          {tab === 'ai' ? (
-            <motion.div key="ai" {...fadeSlide} className="flex flex-col gap-5">
-              <AgentInput key={aiKey} onResult={handleAgentResult} disabled={loading} />
+            <AnimatePresence>
+              {versions.length > 0 && activeVersion && (
+                <motion.div {...fadeSlide} className="flex flex-col gap-4">
+                  <section>
+                    <div className="ui-panel rounded-xl px-4 py-4 sm:px-5">
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="flex min-w-0 items-start gap-3">
+                          <div className="ui-chip-accent flex h-10 w-10 shrink-0 items-center justify-center rounded-xl">
+                            <Brain className="h-[18px] w-[18px]" strokeWidth={2.1} />
+                          </div>
+                          <div className="min-w-0">
+                            <span className="ui-chip-accent mb-2 inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold tracking-wide">
+                              Ваш запрос
+                            </span>
+                            <p className="font-headline text-base font-semibold leading-7 text-on-surface md:text-lg">
+                              &ldquo;{activeVersion.query}&rdquo;
+                            </p>
+                          </div>
+                        </div>
 
-              <AnimatePresence>
-                {versions.length > 0 && activeVersion && (
-                  <motion.div {...fadeSlide} className="flex flex-col gap-3">
-                    {/* Result header: version tabs + row count + export */}
-                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
+                        <div className="flex flex-wrap items-center gap-3 lg:justify-end">
                           {versions.length > 1 ? (
                             <VersionTabs
                               versions={versions}
@@ -235,15 +241,16 @@ export default function ReportsPage() {
                               onSelect={setActiveVersionIdx}
                             />
                           ) : (
-                            <span className="text-xs text-gray-400">v1</span>
+                            <span className="flex items-center gap-1 rounded-lg border border-primary bg-primary px-2.5 py-1 text-[11px] font-semibold text-on-primary shadow-[0_6px_16px_rgba(52,92,150,0.18)]">
+                              <span className="h-1.5 w-1.5 rounded-full bg-on-primary/90" aria-hidden />
+                              v1
+                            </span>
                           )}
-                          <div className="w-px h-4 bg-gray-200" />
-                          <span className="text-xs text-gray-500 font-medium">
+                          <span className="hidden h-4 w-px bg-outline-variant/20 sm:block" />
+                          <span className="text-xs font-medium text-on-surface-variant">
                             {activeVersion.result.rowCount.toLocaleString('ru-RU')} {pluralRows(activeVersion.result.rowCount)}
                           </span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-xs text-gray-400">
+                          <span className="text-xs text-on-surface-variant/70">
                             {new Date(activeVersion.timestamp).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
                           </span>
                           <ExportButton
@@ -253,72 +260,79 @@ export default function ReportsPage() {
                         </div>
                       </div>
                     </div>
+                  </section>
 
-                    {/* Data table */}
-                    <AnimatePresence mode="wait">
-                      <motion.div key={activeVersion.id} {...fadeSlide}>
-                        <DataTable
-                          data={activeVersion.result.data}
-                          columns={activeVersion.result.columns}
-                          rowCount={activeVersion.result.rowCount}
-                          warnings={activeVersion.result.warnings}
-                        />
-                      </motion.div>
-                    </AnimatePresence>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </motion.div>
-          ) : (
-            <motion.div key="manual" {...fadeSlide} className="flex flex-col gap-4">
+                  <AnimatePresence mode="wait">
+                    <motion.div key={activeVersion.id} {...fadeSlide}>
+                      <DataTable
+                        data={activeVersion.result.data}
+                        columns={activeVersion.result.columns}
+                        rowCount={activeVersion.result.rowCount}
+                        warnings={activeVersion.result.warnings}
+                      />
+                    </motion.div>
+                  </AnimatePresence>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        ) : (
+          <motion.div key="manual" {...fadeSlide} className="flex flex-col gap-5">
+            <header>
+              <h1 className="mb-2 font-headline text-3xl font-bold tracking-tight text-on-surface">
+                Ручной отчёт
+              </h1>
+              <p className="max-w-2xl leading-7 text-on-surface-variant">
+                Выберите фильтры и колонки — таблица сформируется по правилам ручного конструктора.
+              </p>
+            </header>
+
+            <div className="flex flex-col gap-4">
               <ReportFilters filters={filters} options={filterOptions} loading={loading}
                 filtersLoading={filtersLoading} onFiltersChange={setFilters} onSubmit={handleSubmit} />
               <ColumnSelector selected={selectedColumns} onChange={setSelectedColumns} />
+            </div>
 
-              <AnimatePresence>
-                {error && (
-                  <motion.div {...fadeSlide} className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">
-                    {error}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {(hasSearched || loading) && (
+            <AnimatePresence>
+              {manualError && (
                 <motion.div {...fadeSlide}>
-                  <ReportTable data={result?.data ?? []} columns={selectedColumns}
-                    total={result?.total ?? 0} page={page} pageSize={pageSize} loading={loading}
-                    onPageChange={handlePageChange} onPageSizeChange={handlePageSizeChange} />
+                  <InlineError message={manualError} />
                 </motion.div>
               )}
+            </AnimatePresence>
 
-              {!hasSearched && !loading && (
-                <EmptyState
-                  title="Настройте фильтры и нажмите «Сформировать отчёт»"
-                  subtitle="Выберите агентов, регионы, даты и другие параметры"
-                />
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </main>
-    </div>
+            {(hasSearched || loading) && (
+              <motion.div {...fadeSlide}>
+                <ReportTable data={result?.data ?? []} columns={selectedColumns}
+                  total={result?.total ?? 0} page={page} pageSize={pageSize} loading={loading}
+                  onPageChange={handlePageChange} onPageSizeChange={handlePageSizeChange} />
+              </motion.div>
+            )}
+
+            {!hasSearched && !loading && (
+              <EmptyState
+                title="Настройте фильтры и нажмите «Сформировать отчёт»"
+                subtitle="Выберите агентов, регионы, даты и другие параметры"
+              />
+            )}
+
+            {tab === 'manual' && hasSearched && result && (
+              <div className="flex justify-end pb-4 sm:hidden">
+                <ExportButton loading={exporting} onClick={handleExportManual} />
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </ReportsChrome>
   );
 }
 
-/* ───────────────── Shared small components ─────────────────────── */
-
-function TabButton({ active, onClick, icon, tooltip, children }: {
-  active: boolean; onClick: () => void; icon: React.ReactNode; tooltip?: string; children: React.ReactNode;
-}) {
+function InlineError({ message }: { message: string }) {
   return (
-    <button type="button" onClick={onClick} title={tooltip}
-      className={`relative flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-200
-        ${active
-          ? 'bg-white text-gray-900 shadow-sm'
-          : 'text-gray-500 hover:text-gray-700'}`}>
-      {icon}
-      {children}
-    </button>
+    <div className="rounded-xl border border-error/30 bg-error-container/40 px-4 py-3 text-sm text-error">
+      {message}
+    </div>
   );
 }
 
@@ -332,11 +346,13 @@ function pluralRows(n: number): string {
 
 function ExportButton({ loading, onClick }: { loading: boolean; onClick: () => void }) {
   return (
-    <button onClick={onClick} disabled={loading}
-      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-60 transition-colors">
-      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-      </svg>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={loading}
+      className="ui-button-secondary flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+    >
+      <FileSpreadsheet className="h-4 w-4 text-primary" strokeWidth={2.1} />
       {loading ? 'Экспорт…' : 'Excel'}
     </button>
   );
@@ -345,39 +361,10 @@ function ExportButton({ loading, onClick }: { loading: boolean; onClick: () => v
 function EmptyState({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <motion.div {...fadeSlide}
-      className="rounded-xl border-2 border-dashed border-gray-200 bg-white/60 p-16 text-center">
-      <svg className="w-10 h-10 mx-auto mb-3 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-      </svg>
-      <p className="text-sm font-medium text-gray-500">{title}</p>
-      <p className="text-xs text-gray-400 mt-1">{subtitle}</p>
+      className="ui-panel-muted rounded-2xl border border-dashed border-outline-variant/30 p-8 text-left sm:p-10">
+      <FileText className="mb-4 block h-10 w-10 text-on-surface-variant/40" strokeWidth={1.8} />
+      <p className="text-sm font-medium text-on-surface">{title}</p>
+      <p className="mt-2 text-xs text-on-surface-variant">{subtitle}</p>
     </motion.div>
-  );
-}
-
-/* ──── Icons ──────────────────────────────────────────────────────── */
-function AiIcon() {
-  return (
-    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-        d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-    </svg>
-  );
-}
-
-function FilterIcon() {
-  return (
-    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-        d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-    </svg>
-  );
-}
-
-function PlusIcon() {
-  return (
-    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-    </svg>
   );
 }

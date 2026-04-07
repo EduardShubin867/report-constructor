@@ -50,27 +50,27 @@ export default function ReportFilters({ filters, options, loading, filtersLoadin
   ].filter(Boolean).length;
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
+    <div className="ui-panel relative overflow-visible rounded-2xl">
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+      <div className="flex items-center justify-between border-b border-outline-variant/10 px-5 py-3">
         <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold text-gray-700">Фильтры</h2>
+          <h2 className="font-headline text-sm font-semibold text-on-surface">Фильтры</h2>
           {activeCount > 0 && (
-            <span className="inline-flex items-center justify-center min-w-[20px] h-5 text-[10px] font-bold bg-blue-600 text-white rounded-full px-1.5">
+            <span className="ui-chip-accent inline-flex h-6 min-w-[24px] items-center justify-center rounded-full px-1.5 text-[10px] font-semibold">
               {activeCount}
             </span>
           )}
         </div>
         {activeCount > 0 && (
           <button type="button" onClick={() => onFiltersChange(EMPTY_FILTERS)}
-            className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
+            className="ui-button-ghost rounded-lg px-2 py-1 text-xs">
             Сбросить все
           </button>
         )}
       </div>
 
       {/* Grid */}
-      <div className="px-5 py-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 gap-3 px-5 py-4 sm:grid-cols-2 lg:grid-cols-3">
         <MultiSelect label="Агент" options={options.агенты} value={filters.агент}
           onChange={v => set('агент', v)} placeholder="Все агенты" loading={filtersLoading} />
         <MultiSelect label="Регион" options={options.регионы} value={filters.регион}
@@ -78,14 +78,14 @@ export default function ReportFilters({ filters, options, loading, filtersLoadin
         <MultiSelect label="Вид договора" options={options.видыДоговора} value={filters.видДоговора}
           onChange={v => set('видДоговора', v)} placeholder="Все виды" loading={filtersLoading} />
 
-        <div className="flex flex-col gap-1">
-          <label className="block text-sm font-medium text-gray-700">Период</label>
-          <div className="flex gap-2 items-center">
+        <div className="flex flex-col gap-1 lg:col-span-2">
+          <label className="block text-sm font-medium text-on-surface">Период</label>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-center">
             <input type="date" value={filters.датаОт} onChange={e => set('датаОт', e.target.value)}
-              className="flex-1 px-2 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            <span className="text-gray-300">—</span>
+              className="ui-field min-w-0 rounded-xl px-3 py-2.5 text-sm focus:border-primary focus:outline-none" />
+            <span className="hidden text-center text-outline-variant sm:block">—</span>
             <input type="date" value={filters.датаДо} onChange={e => set('датаДо', e.target.value)}
-              className="flex-1 px-2 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              className="ui-field min-w-0 rounded-xl px-3 py-2.5 text-sm focus:border-primary focus:outline-none" />
           </div>
         </div>
 
@@ -100,9 +100,9 @@ export default function ReportFilters({ filters, options, loading, filtersLoadin
       </div>
 
       {/* Action bar */}
-      <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50 rounded-b-xl">
+      <div className="border-t border-outline-variant/10 px-5 py-3.5">
         <button type="button" onClick={onSubmit} disabled={loading}
-          className="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60 disabled:cursor-not-allowed transition-colors">
+          className="ui-button-primary rounded-xl px-5 py-2.5 text-sm font-semibold active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60">
           {loading ? 'Загрузка…' : 'Сформировать отчёт'}
         </button>
       </div>

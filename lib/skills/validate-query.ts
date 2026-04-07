@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { getPool, queryWithTimeout, TIMEOUT } from '../db';
 import { validateSql } from '../sql-validator';
 import { setCache } from '../query-cache';
@@ -8,16 +9,9 @@ const validateQuery: ToolSkill = {
   name: 'validate_query',
   description:
     'Выполнить SQL-запрос и вернуть количество строк и первые 3 строки результата. Вызывай ОДИН РАЗ как финальную проверку готового запроса. НЕ используй для итеративной разработки или разведки — сначала напиши полный SQL, потом проверь.',
-  parameters: {
-    type: 'object',
-    properties: {
-      sql: {
-        type: 'string',
-        description: 'SQL-запрос для проверки (SELECT ...)',
-      },
-    },
-    required: ['sql'],
-  },
+  inputSchema: z.object({
+    sql: z.string().describe('SQL-запрос для проверки (SELECT ...)'),
+  }) as z.ZodType<Record<string, unknown>>,
 
   async execute(args) {
     const sql = String(args.sql ?? '').trim();

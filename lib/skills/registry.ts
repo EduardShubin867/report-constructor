@@ -16,7 +16,8 @@
  * 3. Enabled rows appear in the agent catalog; full text via read_instruction
  */
 
-import type { ToolSkill, ToolDefinition } from './types';
+import { tool, type ToolSet } from 'ai';
+import type { ToolSkill } from './types';
 import lookupDg from './lookup-dg';
 import lookupTerritory from './lookup-territory';
 import listColumnValues from './list-column-values';
@@ -53,17 +54,20 @@ for (const skill of TOOL_SKILLS) {
 
 // ── Public API ─────────────────────────────────────────────────────
 
-/** OpenAI function-calling tool definitions */
-export const AGENT_TOOLS: ToolDefinition[] = TOOL_SKILLS.map(s => ({
-  type: 'function' as const,
-  function: {
-    name: s.name,
-    description: s.description,
-    parameters: s.parameters,
-  },
-}));
+/** Vercel AI SDK tool set for sub-agents (single source: Zod + execute). */
+export function buildAgentToolSet(): ToolSet {
+  const entries = TOOL_SKILLS.map(s => [
+    s.name,
+    tool({
+      description: s.description,
+      inputSchema: s.inputSchema,
+      execute: async (input: Record<string, unknown>) => s.execute(input),
+    }),
+  ]);
+  return Object.fromEntries(entries) as ToolSet;
+}
 
-/** Execute a tool skill by name */
+/** Execute a tool skill by name (tests / admin / debugging). */
 export async function executeSkill(
   name: string,
   args: Record<string, unknown>,

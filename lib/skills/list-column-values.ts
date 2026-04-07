@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { getPool, queryWithTimeout, TIMEOUT } from '../db';
 import { getFilterableColumns } from '../schema';
 import type { ToolSkill } from './types';
@@ -7,24 +8,19 @@ const listColumnValues: ToolSkill = {
   name: 'list_column_values',
   description:
     'Получить уникальные значения колонки из основной таблицы с количеством записей. Используй чтобы узнать точные названия агентов, марок, регионов и т.п. перед написанием SQL.',
-  parameters: {
-    type: 'object',
-    properties: {
-      column: {
-        type: 'string',
-        description: 'Имя filterable-колонки (строковые колонки: Агент, Марка, Регион, ВидДоговора и т.п.)',
-      },
-      search: {
-        type: 'string',
-        description: 'Опциональный фильтр (LIKE %search%). Пример: "Москва", "BMW"',
-      },
-      limit: {
-        type: 'number',
-        description: 'Макс. результатов (по умолчанию 20, максимум 50)',
-      },
-    },
-    required: ['column'],
-  },
+  inputSchema: z.object({
+    column: z
+      .string()
+      .describe('Имя filterable-колонки (строковые колонки: Агент, Марка, Регион, ВидДоговора и т.п.)'),
+    search: z
+      .string()
+      .optional()
+      .describe('Опциональный фильтр (LIKE %search%). Пример: "Москва", "BMW"'),
+    limit: z
+      .number()
+      .optional()
+      .describe('Макс. результатов (по умолчанию 20, максимум 50)'),
+  }) as z.ZodType<Record<string, unknown>>,
 
   async execute(args) {
     const column = String(args.column ?? '');
