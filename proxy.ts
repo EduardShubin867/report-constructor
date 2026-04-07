@@ -10,7 +10,7 @@ function verify(token: string, secret: string): boolean {
   return sig === expected;
 }
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   const isAdminPage = pathname === '/admin' || pathname.startsWith('/admin/');
