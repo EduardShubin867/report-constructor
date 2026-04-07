@@ -23,4 +23,7 @@ services:
       OPENROUTER_MODEL: ${OPENROUTER_MODEL}
       # App
       NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3400/constructor}
+      # Admin / analytics (must be listed here — host .env is not injected implicitly)
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      AGENT_ANALYTICS_ENABLED: ${AGENT_ANALYTICS_ENABLED:-false}
     restart: unless-stopped
