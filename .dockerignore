@@ -1,3 +1,7 @@
+# Runtime DB/JSON — supplied via compose volume, not baked into the image.
+# Also avoids build-context "permission denied" when ./data is chown'd to UID 1001.
+data/
+
 .git
 .gitignore
 .next
