@@ -6,6 +6,7 @@ import { generateText, NoObjectGeneratedError, Output, stepCountIs } from 'ai';
 import type { RunnerOptions } from './types';
 import { resolveAgentModel } from './registry';
 import { createAppOpenRouter } from '@/lib/llm/openrouter-factory';
+import { AGENT_DEBUG_ENABLED } from '@/lib/constants';
 import { buildAgentToolSet } from '@/lib/skills/registry';
 import {
   agentResponseSchema,
@@ -31,21 +32,56 @@ export async function runAgent(opts: RunnerOptions): Promise<void> {
   const openrouter = createAppOpenRouter();
   const modelId = resolveAgentModel(agent.model);
   const model = openrouter(modelId);
-  const tools = buildAgentToolSet();
+  const tools = buildAgentToolSet(
+    ctx.skipAutoRowLimit ? { skipAutoRowLimit: true } : undefined,
+  );
+  const systemPrompt = agent.buildSystemPrompt(ctx);
+  const userMessage = agent.buildUserMessage(ctx);
+  const messages = [{ role: 'user' as const, content: userMessage }];
   const maxRounds = agent.maxRounds ?? DEFAULT_MAX_ROUNDS;
   const stepBudget = maxRounds + STRUCTURED_OUTPUT_STEP_BUFFER;
 
   const startTime = Date.now();
   console.log(`[Agent:${agent.name}] started, model=${modelId}`);
+  send({
+    type: 'debug',
+    scope: 'runner',
+    message: 'Запускаю суб-агента',
+    data: {
+      agent: agent.name,
+      model: modelId,
+      maxRounds,
+      stepBudget,
+    },
+  });
 
   let skillRounds = 0;
   send({ type: 'phase', phase: 'thinking' });
 
+  if (AGENT_DEBUG_ENABLED) {
+    send({
+      type: 'debug',
+      scope: 'runner',
+      message: 'LLM request payload суб-агента',
+      data: {
+        agent: agent.name,
+        request: {
+          model: modelId,
+          temperature: 0.1,
+          stepBudget,
+          toolNames: Object.keys(tools),
+          systemPrompt,
+          messages,
+        },
+      },
+    });
+  }
+
   try {
     const result = await generateText({
       model,
-      system: agent.buildSystemPrompt(ctx),
-      messages: [{ role: 'user', content: agent.buildUserMessage(ctx) }],
+      system: systemPrompt,
+      messages,
       tools,
       temperature: 0.1,
       stopWhen: stepCountIs(stepBudget),
@@ -67,6 +103,17 @@ export async function runAgent(opts: RunnerOptions): Promise<void> {
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     console.log(`[Agent:${agent.name}] Done in ${elapsed}s, skillRounds=${skillRounds}`);
     send({
+      type: 'debug',
+      scope: 'runner',
+      message: 'Суб-агент завершил работу',
+      data: {
+        agent: agent.name,
+        durationSec: Number(elapsed),
+        skillRounds,
+        hasSql: Boolean(output.sql?.trim()),
+      },
+    });
+    send({
       type: 'result',
       data: { ...output, explanation: cleanedExplanation, _skillRounds: skillRounds },
     });
@@ -74,6 +121,15 @@ export async function runAgent(opts: RunnerOptions): Promise<void> {
     if (NoObjectGeneratedError.isInstance(err)) {
       const fallback = tryParseAgentResponseFromText(err.text ?? '');
       if (fallback) {
+        send({
+          type: 'debug',
+          scope: 'runner',
+          message: 'Не удалось получить structured output, использую текстовый fallback',
+          level: 'warn',
+          data: {
+            agent: agent.name,
+          },
+        });
         send({ type: 'phase', phase: 'finalizing' });
         const exp = filterTechnicalExplanation(fallback.sql, fallback.explanation);
         send({
@@ -85,6 +141,16 @@ export async function runAgent(opts: RunnerOptions): Promise<void> {
     }
     console.error(`[Agent:${agent.name}]`, err);
     const message = err instanceof Error ? err.message : 'Внутренняя ошибка агента';
+    send({
+      type: 'debug',
+      scope: 'runner',
+      message: 'Суб-агент завершился с ошибкой',
+      level: 'error',
+      data: {
+        agent: agent.name,
+        error: message,
+      },
+    });
     send({ type: 'error', error: message });
   }
 }

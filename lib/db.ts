@@ -104,6 +104,17 @@ export const TIMEOUT = {
   EXPORT: 60_000,
 } as const;
 
+/** Applied when AI user disables the automatic TOP/LIMIT (heavier queries). */
+const UNLIMITED_ROWS_TIMEOUT_FACTOR = 4;
+
+/** Scale base timeout when row auto-limit is off (query + export). */
+export function timeoutWhenUnlimitedRows(
+  baseMs: number,
+  skipAutoRowLimit?: boolean,
+): number {
+  return skipAutoRowLimit ? baseMs * UNLIMITED_ROWS_TIMEOUT_FACTOR : baseMs;
+}
+
 export class QueryTimeoutError extends Error {
   constructor(timeoutMs: number) {
     super(`Query timed out after ${timeoutMs}ms`);

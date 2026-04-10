@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1774875991614,
+  "lastScanned": 1775804662781,
   "projectRoot": "/Users/eduardshubin/code/constructor",
   "techStack": {
     "languages": [
@@ -54,7 +54,7 @@
     }
   },
   "conventions": {
-    "namingStyle": "camelCase/PascalCase",
+    "namingStyle": "camelCase",
     "importStyle": "ES modules",
     "testPattern": null,
     "fileOrganization": null
@@ -79,7 +79,7 @@
       "path": "app",
       "purpose": "Application code",
       "fileCount": 4,
-      "lastAccessed": 1774875991597,
+      "lastAccessed": 1775804662767,
       "keyFiles": [
         "favicon.ico",
         "globals.css",
@@ -90,44 +90,47 @@
     "components": {
       "path": "components",
       "purpose": "UI components",
-      "fileCount": 14,
-      "lastAccessed": 1774875991597,
+      "fileCount": 21,
+      "lastAccessed": 1775804662767,
       "keyFiles": [
-        "AgentInput.tsx",
-        "AgentStepper.tsx",
-        "ColumnSelector.tsx",
-        "ConnectionEditor.tsx",
-        "DataTable.tsx"
+        "AgentArtifactCard.tsx",
+        "AgentArtifactModal.tsx",
+        "AgentChatWorkspace.tsx",
+        "AgentComposer.tsx",
+        "AgentDebugPanel.tsx"
       ]
     },
     "data": {
       "path": "data",
       "purpose": "Data files",
-      "fileCount": 2,
-      "lastAccessed": 1774875991597,
+      "fileCount": 7,
+      "lastAccessed": 1775804662769,
       "keyFiles": [
+        "agent-analytics.db",
         "connections.json",
-        "sources.json"
+        "report-history.db",
+        "report-history.db-shm",
+        "report-history.db-wal"
       ]
     },
     "lib": {
       "path": "lib",
       "purpose": "Library code",
-      "fileCount": 8,
-      "lastAccessed": 1774875991597,
+      "fileCount": 13,
+      "lastAccessed": 1775804662770,
       "keyFiles": [
+        "agent-analytics.ts",
         "agent-skills.ts",
-        "constants.ts",
-        "db.ts",
-        "query-builder.ts",
-        "query-cache.ts"
+        "business-time.ts",
+        "column-header.ts",
+        "constants.ts"
       ]
     },
     "public": {
       "path": "public",
       "purpose": "Public files",
       "fileCount": 5,
-      "lastAccessed": 1774875991603,
+      "lastAccessed": 1775804662770,
       "keyFiles": [
         "file.svg",
         "globe.svg",
@@ -140,7 +143,7 @@
       "path": "app/api",
       "purpose": "API routes",
       "fileCount": 0,
-      "lastAccessed": 1774875991604,
+      "lastAccessed": 1775804662770,
       "keyFiles": []
     }
   },
@@ -149,6 +152,12 @@
       "path": "lib/agents/sql-analyst.ts",
       "accessCount": 15,
       "lastAccessed": 1774928370541,
+      "type": "file"
+    },
+    {
+      "path": "components/AgentInput.tsx",
+      "accessCount": 10,
+      "lastAccessed": 1775804717328,
       "type": "file"
     },
     {
@@ -200,15 +209,15 @@
       "type": "file"
     },
     {
-      "path": "components/AgentInput.tsx",
-      "accessCount": 5,
-      "lastAccessed": 1774928316425,
-      "type": "file"
-    },
-    {
       "path": "lib/agents/registry.ts",
       "accessCount": 5,
       "lastAccessed": 1774928499493,
+      "type": "file"
+    },
+    {
+      "path": "app/reports/page.tsx",
+      "accessCount": 5,
+      "lastAccessed": 1775806313603,
       "type": "file"
     },
     {
@@ -239,12 +248,6 @@
       "path": "app/admin/SourcesManager.tsx",
       "accessCount": 3,
       "lastAccessed": 1774878976955,
-      "type": "file"
-    },
-    {
-      "path": "app/reports/page.tsx",
-      "accessCount": 3,
-      "lastAccessed": 1774898507597,
       "type": "file"
     },
     {
@@ -344,6 +347,12 @@
       "type": "file"
     },
     {
+      "path": "components",
+      "accessCount": 2,
+      "lastAccessed": 1775805607775,
+      "type": "directory"
+    },
+    {
       "path": "lib/agent-skills.ts",
       "accessCount": 1,
       "lastAccessed": 1774876025373,
@@ -432,12 +441,6 @@
       "accessCount": 1,
       "lastAccessed": 1774898537033,
       "type": "file"
-    },
-    {
-      "path": "components",
-      "accessCount": 1,
-      "lastAccessed": 1774928310877,
-      "type": "directory"
     },
     {
       "path": "lib/agents/trend-analyst.ts",

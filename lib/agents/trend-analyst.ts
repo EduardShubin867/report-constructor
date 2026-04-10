@@ -6,6 +6,10 @@
  */
 
 import type { SubAgentConfig, AgentContext } from './types';
+import {
+  getCriticalDatabaseRulesSection,
+  getTerritoryScopedUserMessageNote,
+} from './shared-db-rules';
 import { getTextInstructionsCatalog } from '@/lib/skills/registry';
 import { getDataSources } from '@/lib/schema';
 import { schemaToPrompt } from '@/lib/schema/to-prompt';
@@ -62,12 +66,11 @@ SELECT ..., AVG(метрика) OVER (ORDER BY период ROWS BETWEEN 2 PRECE
 
 ## Инструменты и инструкции
 
-### Правила использования инструментов
+${getCriticalDatabaseRulesSection()}
 
-1. **НЕ УГАДЫВАЙ значения.** Если пользователь упоминает ДГ, город, агента — сначала найди через инструмент.
-2. Справочники вызывай ПАРАЛЛЕЛЬНО в одном раунде.
-3. \`validate_query\` — вызывай ОДИН раз с ГОТОВЫМ запросом.
-4. Типичный сценарий: 1 раунд lookup (если нужно) → 1 раунд validate_query → финальный JSON.
+### Дополнительные правила использования инструментов
+
+1. Типичный сценарий: 1 раунд lookup (если нужно) → 1 раунд validate_query → финальный JSON.
 
 ### Самопроверка (ОБЯЗАТЕЛЬНО)
 
@@ -129,16 +132,17 @@ ${getTextInstructionsCatalog({
 
 function buildUserMessage(ctx: AgentContext): string {
   const { query, previousSql, retryError } = ctx;
+  const territoryNote = getTerritoryScopedUserMessageNote(query);
 
   if (retryError && previousSql) {
-    return `SQL-запрос вернул ошибку. Исправь его.\n\nТекущий SQL:\n${previousSql}\n\nОшибка:\n${retryError}\n\nВерни исправленный SQL. Если ошибка связана с несуществующей колонкой/таблицей — установи canRetry: false.`;
+    return `SQL-запрос вернул ошибку. Исправь его.\n\nТекущий SQL:\n${previousSql}\n\nОшибка:\n${retryError}\n\nВерни исправленный SQL. Если ошибка связана с несуществующей колонкой/таблицей — установи canRetry: false.${territoryNote}`;
   }
 
   if (previousSql) {
-    return `Пользователь хочет изменить существующий отчёт.\n\nТекущий SQL:\n${previousSql}\n\nЗапрос пользователя: ${query}\n\nЕсли это доработка — измени существующий SQL. Если принципиально новый — напиши с нуля.`;
+    return `Пользователь хочет изменить существующий отчёт.\n\nТекущий SQL:\n${previousSql}\n\nЗапрос пользователя: ${query}\n\nЕсли это доработка — измени существующий SQL. Если принципиально новый — напиши с нуля.${territoryNote}`;
   }
 
-  return query;
+  return `${query}${territoryNote}`;
 }
 
 const trendAnalyst: SubAgentConfig = {

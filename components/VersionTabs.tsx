@@ -1,7 +1,7 @@
 'use client';
 
 export interface VersionTabInfo {
-  id: number;
+  id: string | number;
   label: string;
   query: string;
 }

@@ -31,6 +31,10 @@ export interface ValidateOptions {
   dialect?: SqlDialect;
   /** Maximum rows before auto-limit kicks in. Defaults to 5 000. */
   maxRows?: number;
+  /**
+   * When true, do not inject TOP / LIMIT (user accepts full result size and query timeout risk).
+   */
+  skipAutoRowLimit?: boolean;
 }
 
 // ─── Default allowed tables (derived from schema) ───────────────────────────
@@ -144,6 +148,7 @@ export function validateSql(rawSql: string, options?: ValidateOptions): SqlValid
     allowedTables = ALLOWED_TABLES,
     dialect = 'mssql',
     maxRows = 5_000,
+    skipAutoRowLimit = false,
   } = options ?? {};
 
   if (!rawSql?.trim()) {
@@ -177,11 +182,15 @@ export function validateSql(rawSql: string, options?: ValidateOptions): SqlValid
 
   // Layer 5 — inject row limit, collect warnings
   const warnings: string[] = [];
-  const { sql: limited, added } = injectLimit(stripped, dialect, maxRows);
-  if (added) {
-    const limitLabel = dialect === 'mssql' ? `TOP ${maxRows}` : `LIMIT ${maxRows}`;
-    warnings.push(`Автоматически добавлено ограничение ${limitLabel}`);
+  let sqlOut = stripped;
+  if (!skipAutoRowLimit) {
+    const { sql: limited, added } = injectLimit(stripped, dialect, maxRows);
+    sqlOut = limited;
+    if (added) {
+      const limitLabel = dialect === 'mssql' ? `TOP ${maxRows}` : `LIMIT ${maxRows}`;
+      warnings.push(`Автоматически добавлено ограничение ${limitLabel}`);
+    }
   }
 
-  return { valid: true, sql: limited, ...(warnings.length ? { warnings } : {}) };
+  return { valid: true, sql: sqlOut, ...(warnings.length ? { warnings } : {}) };
 }

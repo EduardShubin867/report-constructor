@@ -22,7 +22,8 @@ import lookupDg from './lookup-dg';
 import lookupTerritory from './lookup-territory';
 import listColumnValues from './list-column-values';
 import getKrmKrp from './get-krm-krp';
-import validateQuery from './validate-query';
+import validateQuery, { executeValidateQuery } from './validate-query';
+import type { ValidateOptions } from '../sql-validator';
 import readInstruction from './read-instruction';
 
 export {
@@ -55,13 +56,18 @@ for (const skill of TOOL_SKILLS) {
 // ── Public API ─────────────────────────────────────────────────────
 
 /** Vercel AI SDK tool set for sub-agents (single source: Zod + execute). */
-export function buildAgentToolSet(): ToolSet {
+export function buildAgentToolSet(
+  sqlValidateOpts?: Pick<ValidateOptions, 'skipAutoRowLimit'>,
+): ToolSet {
   const entries = TOOL_SKILLS.map(s => [
     s.name,
     tool({
       description: s.description,
       inputSchema: s.inputSchema,
-      execute: async (input: Record<string, unknown>) => s.execute(input),
+      execute: async (input: Record<string, unknown>) =>
+        s.name === 'validate_query'
+          ? executeValidateQuery(input, sqlValidateOpts)
+          : s.execute(input),
     }),
   ]);
   return Object.fromEntries(entries) as ToolSet;

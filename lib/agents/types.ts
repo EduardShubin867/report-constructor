@@ -11,16 +11,27 @@ export interface AgentContext {
   previousSql?: string;
   /** Error from previous SQL execution (retry mode) */
   retryError?: string;
+  /** When true, SQL validator does not inject TOP/LIMIT for AI tools and follow-up query. */
+  skipAutoRowLimit?: boolean;
 }
 
 /* ────────────────────────────────────────────────────────────────────
  * SSE events emitted during agent execution
  * ──────────────────────────────────────────────────────────────────── */
 
+export type AgentDebugLevel = 'info' | 'warn' | 'error';
+
 export type AgentEvent =
   | { type: 'phase'; phase: string }
   | { type: 'skill'; name: string; args: Record<string, unknown> }
   | { type: 'sub_agent'; name: string }
+  | {
+      type: 'debug';
+      scope: 'orchestrator' | 'runner';
+      message: string;
+      level?: AgentDebugLevel;
+      data?: Record<string, unknown>;
+    }
   | { type: 'result'; data: Record<string, unknown> }
   | { type: 'error'; error: string };
 

@@ -14,6 +14,7 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: projectRoot,
   },
+  allowedDevOrigins: ['mac.lan'],
 };
 
 export default nextConfig;

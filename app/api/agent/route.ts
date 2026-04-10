@@ -22,14 +22,14 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: 'OPENROUTER_API_KEY не настроен' }, { status: 500 });
   }
 
-  let body: { query: string; previousSql?: string; retryError?: string };
+  let body: { query: string; previousSql?: string; retryError?: string; skipAutoRowLimit?: boolean };
   try {
     body = await request.json();
   } catch {
     return Response.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const { query, previousSql, retryError } = body;
+  const { query, previousSql, retryError, skipAutoRowLimit } = body;
   if (!query?.trim()) {
     return Response.json({ error: 'Запрос не может быть пустым' }, { status: 400 });
   }
@@ -50,7 +50,13 @@ export async function POST(request: NextRequest) {
         const today = getBusinessToday();
 
         await orchestrate({
-          ctx: { today, query, previousSql, retryError },
+          ctx: {
+            today,
+            query,
+            previousSql,
+            retryError,
+            ...(skipAutoRowLimit === true ? { skipAutoRowLimit: true } : {}),
+          },
           send,
         });
       } catch (err) {

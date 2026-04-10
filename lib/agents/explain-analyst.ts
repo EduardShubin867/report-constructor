@@ -7,6 +7,10 @@
  */
 
 import type { SubAgentConfig, AgentContext } from './types';
+import {
+  getCriticalDatabaseRulesSection,
+  getTerritoryScopedUserMessageNote,
+} from './shared-db-rules';
 import { getTextInstructionsCatalog } from '@/lib/skills/registry';
 import { getDataSources } from '@/lib/schema';
 import { schemaToPrompt } from '@/lib/schema/to-prompt';
@@ -38,6 +42,8 @@ ${schema}
 2. \`lookup_dg\`, \`lookup_territory\` — найди точные коды для запросов
 3. \`list_column_values\` — посмотри какие значения есть в колонке
 4. \`read_instruction\` — при необходимости загрузи полный текст текстовой инструкции по \`id\` из каталога ниже
+
+${getCriticalDatabaseRulesSection()}
 
 **Типичный сценарий**: lookup (если нужно) → validate_query для получения данных → финальная интерпретация.
 
@@ -77,12 +83,13 @@ ${getTextInstructionsCatalog({
 
 function buildUserMessage(ctx: AgentContext): string {
   const { query, previousSql } = ctx;
+  const territoryNote = getTerritoryScopedUserMessageNote(query);
 
   if (previousSql) {
-    return `Пользователь хочет понять данные из этого отчёта.\n\nSQL отчёта:\n${previousSql}\n\nВопрос: ${query}\n\nПроанализируй и объясни.`;
+    return `Пользователь хочет понять данные из этого отчёта.\n\nSQL отчёта:\n${previousSql}\n\nВопрос: ${query}\n\nПроанализируй и объясни.${territoryNote}`;
   }
 
-  return query;
+  return `${query}${territoryNote}`;
 }
 
 const explainAnalyst: SubAgentConfig = {

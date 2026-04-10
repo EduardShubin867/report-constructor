@@ -2,6 +2,7 @@
 
 import { Bot, Plus } from 'lucide-react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { motion, useScroll, useMotionValueEvent, AnimatePresence } from 'framer-motion';
 import DbStatus from '@/components/DbStatus';
@@ -9,12 +10,13 @@ import DbStatus from '@/components/DbStatus';
 export type ReportsTab = 'ai' | 'manual';
 
 interface ReportsChromeProps {
-  tab: ReportsTab;
-  onTabChange: (t: ReportsTab) => void;
   onCreateReport: () => void;
   headerActions?: React.ReactNode;
   children: React.ReactNode;
 }
+
+const CHAT_HREF = '/reports/chat';
+const MANUAL_HREF = '/reports/manual';
 
 function BrandMark({ compact = false }: { compact?: boolean }) {
   return (
@@ -39,12 +41,12 @@ const tabBtn = (active: boolean, compact?: boolean) =>
   }`;
 
 export default function ReportsChrome({
-  tab,
-  onTabChange,
   onCreateReport,
   headerActions,
   children,
 }: ReportsChromeProps) {
+  const pathname = usePathname();
+  const tab: ReportsTab = pathname?.startsWith(MANUAL_HREF) ? 'manual' : 'ai';
   const [compact, setCompact] = useState(false);
   const [allowCompact, setAllowCompact] = useState(false);
   const lastY = useRef(0);
@@ -80,6 +82,8 @@ export default function ReportsChrome({
     else if (delta < -8) setCompact(false);
   });
 
+  const createLabel = tab === 'ai' ? 'Новый чат' : 'Новый отчет';
+
   return (
     <div className="min-h-screen overflow-x-hidden bg-background text-on-surface">
       {/* Резервируем место под хедер — в обоих режимах контент не прыгает */}
@@ -102,7 +106,7 @@ export default function ReportsChrome({
               transition={{ type: 'spring', stiffness: 400, damping: 35 }}
             >
               <Link
-                href="/reports"
+                href={CHAT_HREF}
                 className="shrink-0"
                 aria-label="ИИ аналитик"
               >
@@ -110,14 +114,14 @@ export default function ReportsChrome({
                 <span className="sr-only">ИИ аналитик</span>
               </Link>
               <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] sm:justify-center md:flex-none md:justify-start [&::-webkit-scrollbar]:hidden">
-                <button type="button" onClick={() => onTabChange('ai')} className={tabBtn(tab === 'ai')}>
-                  <span className="sm:hidden">Запрос</span>
-                  <span className="hidden sm:inline">Свободный запрос</span>
-                </button>
-                <button type="button" onClick={() => onTabChange('manual')} className={tabBtn(tab === 'manual')}>
+                <Link href={CHAT_HREF} className={tabBtn(tab === 'ai')}>
+                  <span className="sm:hidden">Чат</span>
+                  <span className="hidden sm:inline">Чат</span>
+                </Link>
+                <Link href={MANUAL_HREF} className={tabBtn(tab === 'manual')}>
                   <span className="sm:hidden">Ручной</span>
                   <span className="hidden sm:inline">Конструктор</span>
-                </button>
+                </Link>
               </div>
             </motion.div>
 
@@ -139,13 +143,13 @@ export default function ReportsChrome({
                 className="ui-button-secondary hidden items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold active:scale-[0.98] sm:flex"
               >
                 <Plus className="h-4 w-4 text-primary" strokeWidth={2.2} />
-                Новый отчет
+                {createLabel}
               </button>
               <button
                 type="button"
                 onClick={onCreateReport}
                 className="ui-button-secondary flex h-9 w-9 items-center justify-center rounded-full sm:hidden"
-                aria-label="Новый отчет"
+                aria-label={createLabel}
               >
                 <Plus className="h-4.5 w-4.5 text-primary" strokeWidth={2.2} />
               </button>
@@ -173,7 +177,7 @@ export default function ReportsChrome({
               transition={{ type: 'spring', stiffness: 450, damping: 36 }}
             >
               <Link
-                href="/reports"
+                href={CHAT_HREF}
                 className="shrink-0"
                 aria-label="ИИ аналитик"
               >
@@ -182,12 +186,12 @@ export default function ReportsChrome({
               </Link>
               <span className="h-5 w-px shrink-0 bg-outline-variant/25" aria-hidden />
               <div className="flex min-w-0 flex-1 items-center justify-center gap-0.5 sm:gap-1">
-                <button type="button" onClick={() => onTabChange('ai')} className={tabBtn(tab === 'ai', true)}>
-                  Запрос
-                </button>
-                <button type="button" onClick={() => onTabChange('manual')} className={tabBtn(tab === 'manual', true)}>
+                <Link href={CHAT_HREF} className={tabBtn(tab === 'ai', true)}>
+                  Чат
+                </Link>
+                <Link href={MANUAL_HREF} className={tabBtn(tab === 'manual', true)}>
                   Конструктор
-                </button>
+                </Link>
               </div>
               <span className="h-5 w-px shrink-0 bg-outline-variant/25" aria-hidden />
               <DbStatus variant="dot" />
@@ -196,7 +200,7 @@ export default function ReportsChrome({
                 type="button"
                 onClick={onCreateReport}
                 className="ui-button-secondary flex h-8 w-8 shrink-0 items-center justify-center rounded-full active:scale-95"
-                aria-label="Новый отчет"
+                aria-label={createLabel}
               >
                 <Plus className="h-4 w-4 text-primary" strokeWidth={2.2} />
               </button>
@@ -211,8 +215,8 @@ export default function ReportsChrome({
         )}
       </AnimatePresence>
 
-      <main className="min-h-[calc(100vh-4rem)] flex-1 bg-background p-4 sm:p-8">
-        <div className="mx-auto max-w-6xl">{children}</div>
+      <main className="min-h-[calc(100vh-4rem)] flex-1 bg-background p-4 sm:p-6 xl:px-8">
+        <div className="mx-auto max-w-[112rem]">{children}</div>
       </main>
     </div>
   );

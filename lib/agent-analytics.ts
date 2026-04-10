@@ -10,6 +10,7 @@ import type { AgentEvent } from '@/lib/agents/types';
 
 const QUERY_MAX_LEN = 2000;
 const SQL_PREVIEW_MAX = 120;
+const DEBUG_STRING_PREVIEW_MAX = 240;
 
 let dbSingleton: Database.Database | null = null;
 
@@ -92,6 +93,32 @@ function truncateQueryRaw(q: string): string {
   return t.length <= QUERY_MAX_LEN ? t : `${t.slice(0, QUERY_MAX_LEN)}…`;
 }
 
+function sanitizeDebugValueForStorage(value: unknown): unknown {
+  if (typeof value === 'string') {
+    return value.length > DEBUG_STRING_PREVIEW_MAX
+      ? {
+          _redacted: true,
+          length: value.length,
+          preview: value.slice(0, DEBUG_STRING_PREVIEW_MAX),
+        }
+      : value;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean' || value == null) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.slice(0, 12).map(item => sanitizeDebugValueForStorage(item));
+  }
+  if (typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .slice(0, 24)
+        .map(([key, nested]) => [key, sanitizeDebugValueForStorage(nested)]),
+    );
+  }
+  return String(value);
+}
+
 /** Убираем полный SQL из payload перед записью в аналитическую БД. */
 export function sanitizeAgentEventForStorage(event: AgentEvent): Record<string, unknown> {
   switch (event.type) {
@@ -122,6 +149,14 @@ export function sanitizeAgentEventForStorage(event: AgentEvent): Record<string, 
       }
       return { type: 'result', data };
     }
+    case 'debug':
+      return {
+        type: 'debug',
+        scope: event.scope,
+        message: event.message,
+        level: event.level,
+        data: sanitizeDebugValueForStorage(event.data),
+      };
     default:
       return event as unknown as Record<string, unknown>;
   }
