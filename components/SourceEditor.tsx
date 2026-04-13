@@ -44,6 +44,8 @@ export default function SourceEditor({ connections, initial, onSaved }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [log, setLog] = useState<string[]>([]);
   const [source, setSource] = useState<DataSource | null>(initial ?? null);
+  const [rescanningTable, setRescanningTable] = useState<string | null>(null);
+  const [rescanMsg, setRescanMsg] = useState<Record<string, string>>({});
 
   function setField(key: keyof typeof EMPTY_FORM, value: string) {
     setForm(f => ({ ...f, [key]: value }));
@@ -143,6 +145,67 @@ export default function SourceEditor({ connections, initial, onSaved }: Props) {
       });
       return { ...s, tables };
     });
+  }
+
+  function toggleHidden(tableIdx: number, colIdx: number) {
+    if (!source) return;
+    setSource(s => {
+      if (!s) return s;
+      const tables = s.tables.map((t, ti) => {
+        if (ti !== tableIdx) return t;
+        const columns = t.columns.map((c, ci) => {
+          if (ci !== colIdx) return c;
+          return c.hidden ? { ...c, hidden: undefined } : { ...c, hidden: true };
+        });
+        return { ...t, columns };
+      });
+      return { ...s, tables };
+    });
+  }
+
+  function setAllHidden(tableIdx: number, hidden: boolean) {
+    if (!source) return;
+    setSource(s => {
+      if (!s) return s;
+      const tables = s.tables.map((t, ti) => {
+        if (ti !== tableIdx) return t;
+        const columns = t.columns.map(c =>
+          hidden ? { ...c, hidden: true } : { ...c, hidden: undefined },
+        );
+        return { ...t, columns };
+      });
+      return { ...s, tables };
+    });
+  }
+
+  async function handleRescan(tableName: string) {
+    if (!source) return;
+    setRescanningTable(tableName);
+    setRescanMsg(m => ({ ...m, [tableName]: '' }));
+    try {
+      const res = await fetch(`${BASE_PATH}/api/admin/sources/${encodeURIComponent(source.id)}/rescan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tableName }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.source) {
+        setRescanMsg(m => ({ ...m, [tableName]: `Ошибка: ${data.error ?? 'неизвестная ошибка'}` }));
+        return;
+      }
+      setSource(data.source);
+      const count = (data.newColumns as string[])?.length ?? 0;
+      setRescanMsg(m => ({
+        ...m,
+        [tableName]: count > 0
+          ? `найдено ${count} новых колонок: ${(data.newColumns as string[]).join(', ')}`
+          : 'новых колонок не найдено',
+      }));
+    } catch (e) {
+      setRescanMsg(m => ({ ...m, [tableName]: e instanceof Error ? e.message : 'Сетевая ошибка' }));
+    } finally {
+      setRescanningTable(null);
+    }
   }
 
   function handleReset() {
@@ -311,7 +374,31 @@ export default function SourceEditor({ connections, initial, onSaved }: Props) {
                     <span className="text-xs bg-zinc-700 text-zinc-300 rounded px-1.5 py-0.5">alias: {mainTable.alias}</span>
                   )}
                   <span className="text-xs text-zinc-500">{mainTable.columns.length} колонок</span>
+                  {isEdit && (
+                    <button
+                      onClick={() => handleRescan(mainTable.name)}
+                      disabled={rescanningTable === mainTable.name}
+                      className="ml-auto px-2.5 py-1 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed rounded text-xs text-zinc-300 transition-colors flex items-center gap-1.5"
+                    >
+                      {rescanningTable === mainTable.name ? (
+                        <>
+                          <span className="inline-block w-2.5 h-2.5 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin" />
+                          Сканирование...
+                        </>
+                      ) : 'Пересканировать'}
+                    </button>
+                  )}
                 </div>
+
+                {rescanMsg[mainTable.name] && (
+                  <div className={`mb-2 text-xs px-2 py-1 rounded ${
+                    rescanMsg[mainTable.name].startsWith('Ошибка')
+                      ? 'text-red-400 bg-red-950/40'
+                      : 'text-emerald-400 bg-emerald-950/40'
+                  }`}>
+                    {rescanMsg[mainTable.name]}
+                  </div>
+                )}
 
                 <div className="border border-zinc-700 rounded-lg overflow-hidden">
                   <table className="w-full text-sm">
@@ -320,6 +407,22 @@ export default function SourceEditor({ connections, initial, onSaved }: Props) {
                         <th className="text-left px-3 py-2 font-medium">Колонка</th>
                         <th className="text-left px-3 py-2 font-medium">Тип</th>
                         <th className="text-center px-3 py-2 font-medium">Filterable</th>
+                        <th className="text-center px-3 py-2 font-medium">
+                          <div className="flex flex-col items-center gap-0.5">
+                            <span>Видима</span>
+                            <div className="flex gap-1">
+                              <button
+                                onClick={() => setAllHidden(source.tables.indexOf(mainTable), false)}
+                                className="text-[10px] text-zinc-400 hover:text-zinc-200 underline underline-offset-1"
+                              >все</button>
+                              <span className="text-zinc-600">/</span>
+                              <button
+                                onClick={() => setAllHidden(source.tables.indexOf(mainTable), true)}
+                                className="text-[10px] text-zinc-400 hover:text-zinc-200 underline underline-offset-1"
+                              >скрыть</button>
+                            </div>
+                          </div>
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -332,7 +435,7 @@ export default function SourceEditor({ connections, initial, onSaved }: Props) {
                           bit: 'text-purple-400',
                         };
                         return (
-                          <tr key={col.name} className="border-t border-zinc-800 hover:bg-zinc-800/30">
+                          <tr key={col.name} className={`border-t border-zinc-800 hover:bg-zinc-800/30 transition-opacity ${col.hidden ? 'opacity-40' : ''}`}>
                             <td className="px-3 py-1.5 text-zinc-200 font-mono text-xs">{col.name}</td>
                             <td className={`px-3 py-1.5 text-xs font-medium ${typeColors[col.type] ?? 'text-zinc-400'}`}>{col.type}</td>
                             <td className="px-3 py-1.5 text-center">
@@ -341,6 +444,18 @@ export default function SourceEditor({ connections, initial, onSaved }: Props) {
                                 className={`w-4 h-4 rounded border text-xs flex items-center justify-center mx-auto transition-colors ${
                                   col.filterable
                                     ? 'bg-emerald-600 border-emerald-500 text-white'
+                                    : 'border-zinc-600 text-transparent hover:border-zinc-400'
+                                }`}
+                              >
+                                ✓
+                              </button>
+                            </td>
+                            <td className="px-3 py-1.5 text-center">
+                              <button
+                                onClick={() => toggleHidden(ti, ci)}
+                                className={`w-4 h-4 rounded border text-xs flex items-center justify-center mx-auto transition-colors ${
+                                  !col.hidden
+                                    ? 'bg-blue-600 border-blue-500 text-white'
                                     : 'border-zinc-600 text-transparent hover:border-zinc-400'
                                 }`}
                               >

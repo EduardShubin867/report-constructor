@@ -11,7 +11,7 @@ import ReportFilters, {
 } from '@/components/ReportFilters';
 import ReportsChrome from '@/components/ReportsChrome';
 import UnifiedReportTable from '@/components/UnifiedReportTable';
-import { ALL_COLUMNS, DEFAULT_COLUMNS } from '@/lib/report-columns';
+import { ALL_COLUMNS, DEFAULT_COLUMNS, type ColumnDef } from '@/lib/report-columns';
 import { BASE_PATH } from '@/lib/constants';
 
 interface ReportResult {
@@ -41,6 +41,7 @@ export default function ManualReportRoute({
 }: ManualReportRouteProps) {
   const [filterOptions, setFilterOptions] = useState<FilterOptions>(initialFilterOptions);
   const [filtersLoading, setFiltersLoading] = useState(initialFilterError);
+  const [visibleColumns, setVisibleColumns] = useState<ColumnDef[]>(ALL_COLUMNS);
   const [manualError, setManualError] = useState<string | null>(null);
   const [filters, setFilters] = useState<FilterValues>(EMPTY_FILTERS);
   const [selectedColumns, setSelectedColumns] = useState<string[]>(DEFAULT_COLUMNS);
@@ -65,6 +66,22 @@ export default function ManualReportRoute({
       })
       .finally(() => setFiltersLoading(false));
   }, [initialFilterError]);
+
+  // Fetch visible columns (admin may have hidden some via schema settings).
+  useEffect(() => {
+    fetch(`${BASE_PATH}/api/report/columns`)
+      .then(r => r.ok ? r.json() : null)
+      .then((data: { columns: ColumnDef[] } | null) => {
+        if (data?.columns?.length) {
+          setVisibleColumns(data.columns);
+          // Drop any selected columns that are now hidden.
+          setSelectedColumns(prev =>
+            prev.filter(k => data.columns.some(c => c.key === k)),
+          );
+        }
+      })
+      .catch(() => { /* keep ALL_COLUMNS fallback */ });
+  }, []);
 
   const fetchReport = useCallback(async (
     nextPage: number,
@@ -178,7 +195,7 @@ export default function ManualReportRoute({
             onFiltersChange={setFilters}
             onSubmit={handleSubmit}
           />
-          <ColumnSelector selected={selectedColumns} onChange={setSelectedColumns} />
+          <ColumnSelector selected={selectedColumns} onChange={setSelectedColumns} columns={visibleColumns} />
         </div>
 
         <AnimatePresence>
@@ -193,7 +210,7 @@ export default function ManualReportRoute({
           <UnifiedReportTable
             data={result?.data ?? []}
             columns={selectedColumns
-              .map(key => ALL_COLUMNS.find(column => column.key === key))
+              .map(key => visibleColumns.find(column => column.key === key))
               .filter(Boolean)
               .map(column => ({ key: column!.key, label: column!.label, type: column!.type }))}
             total={result?.total ?? 0}

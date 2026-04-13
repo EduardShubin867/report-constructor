@@ -1,5 +1,6 @@
 import { sql } from './db';
-import { ALL_COLUMNS, COLUMN_KEYS, JOINS } from './report-columns';
+import { JOINS } from './report-columns';
+import { getVisibleColumnDefs, getVisibleColumnKeys } from './visible-columns';
 
 export interface ReportFilters {
   агент?: string[];
@@ -16,9 +17,10 @@ export interface ReportFilters {
   pageSize?: number;
 }
 
-/** Validate and return allowed column keys */
+/** Validate and return allowed column keys — hidden columns are rejected */
 export function safeColumns(requested: string[]): string[] {
-  return requested.filter(c => COLUMN_KEYS.has(c));
+  const visible = getVisibleColumnKeys();
+  return requested.filter(c => visible.has(c));
 }
 
 /**
@@ -111,7 +113,8 @@ export function buildWhere(req: sql.Request, filters: ReportFilters): string {
  * Returns SELECT expressions (without "SELECT") and JOIN clauses.
  */
 export function buildSelectAndJoins(cols: string[]): { select: string; joins: string } {
-  const colDefs = cols.map(k => ALL_COLUMNS.find(c => c.key === k)!).filter(Boolean);
+  const allDefs = getVisibleColumnDefs();
+  const colDefs = cols.map(k => allDefs.find(c => c.key === k)!).filter(Boolean);
 
   const neededJoinKeys = new Set(colDefs.filter(c => c.joinKey).map(c => c.joinKey!));
   const joinClauses = [...neededJoinKeys].map(k => JOINS[k].sql).join('\n');

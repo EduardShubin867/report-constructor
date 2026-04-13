@@ -6,6 +6,8 @@ export interface ColumnSchema {
   type: ColumnType;
   /** If true, this column can be queried via list_column_values skill */
   filterable?: boolean;
+  /** If true, column is excluded from AI prompts and manual report UI/queries */
+  hidden?: boolean;
 }
 
 export interface ForeignKey {

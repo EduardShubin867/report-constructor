@@ -20,6 +20,7 @@ function tableToPrompt(table: TableSchema, schema: string): string {
   // Group columns by type, preserving definition order within each group
   const byType = new Map<ColumnType, string[]>();
   for (const col of table.columns) {
+    if (col.hidden) continue;
     let list = byType.get(col.type);
     if (!list) { list = []; byType.set(col.type, list); }
     list.push(formatColumnName(col.name));
