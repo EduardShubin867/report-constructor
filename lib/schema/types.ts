@@ -40,6 +40,11 @@ export interface ForeignKey {
   alias: string;
   /** Fields available in the target table */
   targetFields: string[];
+  /**
+   * Подмножество targetFields для группировки по этому FK.
+   * Не задано — все targetFields; пустой массив — ни одного поля этого FK в группировке.
+   */
+  groupByFields?: string[];
   /** Ready-to-use JOIN SQL, e.g. 'LEFT JOIN [dbo].[ДГ] AS dg ON m.ID_ДГ = dg.Код' */
   joinSql: string;
   /** Eager vs lazy загрузка опций фильтра (только при наличии filterConfig). По умолчанию primary. */

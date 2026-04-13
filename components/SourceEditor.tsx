@@ -369,6 +369,57 @@ export default function SourceEditor({ connections, initial, onSaved }: Props) {
     });
   }
 
+  function isFkGroupByFieldChecked(fk: ForeignKey, field: string): boolean {
+    if (fk.groupByFields === undefined) return true;
+    return fk.groupByFields.includes(field);
+  }
+
+  function toggleFkGroupByField(tableIdx: number, fkIdx: number, field: string) {
+    if (!source) return;
+    setSource(s => {
+      if (!s) return s;
+      const tables = s.tables.map((t, ti) => {
+        if (ti !== tableIdx) return t;
+        const foreignKeys = (t.foreignKeys ?? []).map((fk, fi) => {
+          if (fi !== fkIdx) return fk;
+          const all = fk.targetFields;
+          let next: string[] | undefined;
+          if (fk.groupByFields === undefined) {
+            next = all.filter(f => f !== field);
+          } else {
+            const set = new Set(fk.groupByFields);
+            if (set.has(field)) set.delete(field);
+            else set.add(field);
+            next = Array.from(set);
+          }
+          if (next.length === 0) return { ...fk, groupByFields: [] };
+          if (next.length === all.length && all.every(f => next!.includes(f)))
+            return { ...fk, groupByFields: undefined };
+          return { ...fk, groupByFields: next };
+        });
+        return { ...t, foreignKeys };
+      });
+      return { ...s, tables };
+    });
+  }
+
+  function setFkGroupByPreset(tableIdx: number, fkIdx: number, preset: 'all' | 'none') {
+    if (!source) return;
+    setSource(s => {
+      if (!s) return s;
+      const tables = s.tables.map((t, ti) => {
+        if (ti !== tableIdx) return t;
+        const foreignKeys = (t.foreignKeys ?? []).map((fk, fi) =>
+          fi === fkIdx
+            ? { ...fk, groupByFields: preset === 'all' ? undefined : [] }
+            : fk,
+        );
+        return { ...t, foreignKeys };
+      });
+      return { ...s, tables };
+    });
+  }
+
   async function handleRescan(tableName: string) {
     if (!source) return;
     setRescanningTable(tableName);
@@ -838,6 +889,50 @@ export default function SourceEditor({ connections, initial, onSaved }: Props) {
                             </div>
 
                             <div className="px-3 py-2.5">
+                              {fk.targetFields.length > 0 && (
+                                <div className="mb-3 border-b border-zinc-800/80 pb-3">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <p className="text-xs font-medium text-zinc-300">Группировка по справочнику</p>
+                                    <div className="flex flex-wrap gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => setFkGroupByPreset(ti, fkIdx, 'all')}
+                                        className="rounded-md border border-zinc-600 bg-zinc-800/80 px-2 py-0.5 text-[10px] font-medium text-zinc-300 hover:border-zinc-500"
+                                      >
+                                        Все поля
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setFkGroupByPreset(ti, fkIdx, 'none')}
+                                        className="rounded-md border border-zinc-600 bg-zinc-800/80 px-2 py-0.5 text-[10px] font-medium text-zinc-300 hover:border-zinc-500"
+                                      >
+                                        Ни одного
+                                      </button>
+                                    </div>
+                                  </div>
+                                  <p className="mt-1 text-[11px] leading-relaxed text-zinc-500">
+                                    Какие колонки справочника доступны как измерения в ручном отчёте (GROUP BY). По
+                                    умолчанию — все; пустой набор отключает этот FK для группировки.
+                                  </p>
+                                  <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1.5">
+                                    {fk.targetFields.map(field => (
+                                      <label
+                                        key={field}
+                                        className="flex cursor-pointer items-center gap-1.5 text-[11px] text-zinc-300"
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={isFkGroupByFieldChecked(fk, field)}
+                                          onChange={() => toggleFkGroupByField(ti, fkIdx, field)}
+                                          className="rounded border-zinc-600 bg-zinc-800 text-emerald-600 focus:ring-emerald-600/40"
+                                        />
+                                        <span className="font-mono text-zinc-400">{field}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
                               {!hasFilter ? (
                                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                                   <p className="text-xs text-zinc-500">

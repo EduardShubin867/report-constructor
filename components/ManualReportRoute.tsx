@@ -40,6 +40,7 @@ interface ManualReportRouteProps {
 
 const emptyBootstrap: ManualReportSourcePayload = {
   columns: [],
+  groupByColumns: [],
   filterOptions: { filterDefs: [], options: {}, dateFilterCol: null },
   filterError: true,
 };
@@ -64,6 +65,15 @@ function normalizeFilterOptions(fo: SourceFilterOptions): SourceFilterOptions {
   };
 }
 
+function fallbackGroupByColumns(columns: ColumnDef[]): ColumnDef[] {
+  return columns.filter(c => c.type === 'string' || c.type === 'date' || c.type === 'boolean');
+}
+
+function mergeGroupByColumnsPayload(boot: ManualReportSourcePayload): ColumnDef[] {
+  if (boot.groupByColumns !== undefined) return boot.groupByColumns;
+  return fallbackGroupByColumns(boot.columns);
+}
+
 export default function ManualReportRoute({
   initialSourceId = '',
   sources = [],
@@ -80,6 +90,9 @@ export default function ManualReportRoute({
   const [dateTo, setDateTo] = useState('');
   const [filtersLoading, setFiltersLoading] = useState(boot0.filterError);
   const [visibleColumns, setVisibleColumns] = useState<ColumnDef[]>(boot0.columns);
+  const [groupByColumns, setGroupByColumns] = useState<ColumnDef[]>(() =>
+    mergeGroupByColumnsPayload(boot0),
+  );
   const [manualError, setManualError] = useState<string | null>(null);
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
   const [groupBy, setGroupBy] = useState<string[]>([]);
@@ -115,12 +128,14 @@ export default function ManualReportRoute({
     const p = bootstrapById[selectedSourceId];
     if (p) {
       setVisibleColumns(p.columns);
+      setGroupByColumns(mergeGroupByColumnsPayload(p));
       setFilterOptions(normalizeFilterOptions(p.filterOptions));
       setSelectedColumns(prev => prev.filter(k => p.columns.some(c => c.key === k)));
       setFiltersLoading(p.filterError);
     } else {
       setFiltersLoading(true);
       setVisibleColumns([]);
+      setGroupByColumns([]);
       setFilterOptions(normalizeFilterOptions({ filterDefs: [], options: {}, dateFilterCol: null }));
       setSelectedColumns([]);
     }
@@ -135,6 +150,7 @@ export default function ManualReportRoute({
     if (boot && !boot.filterError && boot.columns.length > 0) {
       // Props may arrive after the first client paint (streaming); keep state in sync without waiting on fetch.
       setVisibleColumns(boot.columns);
+      setGroupByColumns(mergeGroupByColumnsPayload(boot));
       setFilterOptions(normalizeFilterOptions(boot.filterOptions));
       setFiltersLoading(false);
       setSelectedColumns(prev => prev.filter(k => boot.columns.some(c => c.key === k)));
@@ -157,9 +173,14 @@ export default function ManualReportRoute({
       .then(([fo, co]) => {
         if (cancelled) return;
         if (fo) setFilterOptions(normalizeFilterOptions(fo as SourceFilterOptions));
-        const cols = co as { columns: ColumnDef[] } | null;
+        const cols = co as { columns: ColumnDef[]; groupByColumns?: ColumnDef[] } | null;
         if (cols?.columns?.length) {
           setVisibleColumns(cols.columns);
+          setGroupByColumns(
+            cols.groupByColumns?.length
+              ? cols.groupByColumns
+              : fallbackGroupByColumns(cols.columns),
+          );
           setSelectedColumns(prev => prev.filter(k => cols.columns.some(c => c.key === k)));
         }
       })
@@ -356,17 +377,16 @@ export default function ManualReportRoute({
     }
   }
 
-  // Измерения для GROUP BY: строки, даты и логические (числа — только как меры SUM).
-  const availableGroupByColumns = visibleColumns.filter(
-    c => c.type === 'string' || c.type === 'date' || c.type === 'boolean',
-  );
+  function resolveColumnDef(key: string): ColumnDef | undefined {
+    return visibleColumns.find(c => c.key === key) ?? groupByColumns.find(c => c.key === key);
+  }
 
   // Table column definitions: in grouped mode show dimensions + measures + count
   const tableColumns = groupBy.length > 0
     ? [
         ...selectedColumns
           .filter(k => groupBy.includes(k))
-          .map(k => visibleColumns.find(c => c.key === k))
+          .map(k => resolveColumnDef(k))
           .filter((c): c is ColumnDef => c != null)
           .map(c => ({ key: c.key, label: c.label, type: c.type, integer: c.integer })),
         ...selectedColumns
@@ -473,7 +493,7 @@ export default function ManualReportRoute({
               });
               setGroupBy(newGroupBy);
             }}
-            availableColumns={availableGroupByColumns}
+            availableColumns={groupByColumns}
           />
         </div>
 

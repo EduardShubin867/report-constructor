@@ -216,6 +216,10 @@ export function buildGroupedSelectAndJoins(
   const groupBySet = new Set(groupBy);
 
   const neededJoinKeys = new Set(colDefs.filter(c => c.joinKey).map(c => c.joinKey!));
+  for (const key of groupBy) {
+    const def = allDefs.find(c => c.key === key);
+    if (def?.joinKey) neededJoinKeys.add(def.joinKey);
+  }
   const joinClauses = [...neededJoinKeys].map(k => joinDefs[k]?.sql ?? '').filter(Boolean).join('\n');
 
   const selectParts: string[] = [];

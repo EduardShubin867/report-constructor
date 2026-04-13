@@ -7,7 +7,7 @@ interface GroupBySelectorProps {
   /** Currently selected group-by column keys */
   groupBy: string[];
   onChange: (cols: string[]) => void;
-  /** Строки, даты и логические колонки из видимого набора источника */
+  /** Измерения: основная таблица + поля FK (см. groupByFields в схеме источника). */
   availableColumns: ColumnDef[];
 }
 
@@ -47,7 +47,8 @@ export default function GroupBySelector({ groupBy, onChange, availableColumns }:
 
       {availableColumns.length === 0 ? (
         <p className="border-t border-outline-variant/10 px-5 py-3 text-xs text-on-surface-variant">
-          Нет колонок для группировки (строка, дата или логический тип). Проверьте, что колонки не скрыты в источнике.
+          Нет измерений для группировки: в источнике нет подходящих колонок журнала и не отмечены поля справочников
+          (FK) для GROUP BY.
         </p>
       ) : (
         <div className="border-t border-outline-variant/10 px-5 py-3">

@@ -73,6 +73,61 @@ export function getVisibleColumnDefs(sourceId: string): ColumnDef[] {
   return result;
 }
 
+function isDimensionType(t: ColumnType): boolean {
+  return t === 'string' || t === 'date' || t === 'boolean';
+}
+
+/**
+ * Измерения для группировки: нечисловые колонки журнала + поля справочников по FK
+ * (учитывается foreignKeys[].groupByFields: не задано = все targetFields, [] = ни одного).
+ */
+export function getGroupByColumnDefs(sourceId: string): ColumnDef[] {
+  const source = getDataSources().find(s => s.id === sourceId);
+  if (!source) return [];
+
+  const table = getMainTable(source);
+  if (!table) return [];
+
+  const result: ColumnDef[] = [];
+
+  for (const col of table.columns) {
+    if (col.hidden) continue;
+    const type = toDefType(col.type);
+    if (!isDimensionType(type)) continue;
+    const known = COLUMN_LABEL_MAP.get(col.name);
+    result.push({
+      key: col.name,
+      label: col.label ?? known?.label ?? col.name,
+      type,
+      groupable: col.groupable,
+    });
+  }
+
+  for (const fk of table.foreignKeys ?? []) {
+    const fields =
+      fk.groupByFields !== undefined
+        ? fk.groupByFields.filter(f => fk.targetFields.includes(f))
+        : fk.targetFields;
+
+    for (const field of fields) {
+      const sqlExpr = `[${fk.alias}].[${field}]`;
+      const known = COLUMN_BY_SQL_EXPR.get(sqlExpr);
+      const type = known?.type ?? 'string';
+      if (!isDimensionType(type)) continue;
+      result.push({
+        key: known?.key ?? `${fk.alias}_${field}`,
+        label: known?.label ?? `${fk.targetTable}: ${field}`,
+        type,
+        joinKey: fk.alias,
+        sqlExpr,
+        groupable: known?.groupable ?? true,
+      });
+    }
+  }
+
+  return result;
+}
+
 /**
  * Returns JOIN definitions for a source: alias → { sql }.
  * Derived from foreignKeys[].{alias, joinSql}.

@@ -128,6 +128,8 @@ export function revalidateManualReportCaches(): void {
 /** Server-prefetched bundle for one manual-report source (columns + filter dropdown data). */
 export type ManualReportSourcePayload = {
   columns: ColumnDef[];
+  /** Измерения для группировки (основная таблица + выбранные поля FK). */
+  groupByColumns?: ColumnDef[];
   filterOptions: SourceFilterOptions;
   /** True when `loadSourceFilterOptions` threw — UI may retry via `/api/report/filters`. */
   filterError: boolean;

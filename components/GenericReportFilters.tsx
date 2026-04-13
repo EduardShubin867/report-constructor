@@ -35,6 +35,10 @@ export default function GenericReportFilters({
   onDateChange,
   onSubmit,
 }: Props) {
+  const primaryDefs = filterDefs.filter(fd => (fd.tier ?? 'primary') === 'primary');
+  const secondaryDefs = filterDefs.filter(fd => fd.tier === 'secondary');
+  const showPrimaryBlock = primaryDefs.length > 0 || dateFilterCol !== null;
+
   const activeCount =
     filterDefs.filter(fd => (values[fd.key]?.length ?? 0) > 0).length +
     (dateFrom || dateTo ? 1 : 0);
@@ -64,45 +68,74 @@ export default function GenericReportFilters({
         )}
       </div>
 
-      {/* Grid */}
-      <div className="grid grid-cols-1 gap-3 px-5 py-4 sm:grid-cols-2 lg:grid-cols-3">
-        {filterDefs.map(fd => (
-          <MultiSelect
-            key={fd.key}
-            label={fd.label}
-            options={options[fd.key] ?? []}
-            value={values[fd.key] ?? []}
-            onChange={v => onFiltersChange({ ...values, [fd.key]: v })}
-            placeholder="Все"
-            loading={
-              Boolean(filtersLoading && (fd.tier ?? 'primary') === 'primary') ||
-              Boolean(lazyFilterLoading?.[fd.key])
-            }
-            onOpenChange={open => {
-              if (open && (fd.tier ?? 'primary') === 'secondary') onLazyFilterOpen?.(fd.key);
-            }}
-          />
-        ))}
+      <div className="space-y-4 px-5 py-4">
+        {showPrimaryBlock && (
+          <section className="rounded-xl border border-primary/15 bg-primary/5 p-4">
+            <h3 className="mb-3 font-headline text-xs font-semibold uppercase tracking-wide text-on-surface">
+              Основные фильтры
+            </h3>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {primaryDefs.map(fd => (
+                <MultiSelect
+                  key={fd.key}
+                  label={fd.label}
+                  options={options[fd.key] ?? []}
+                  value={values[fd.key] ?? []}
+                  onChange={v => onFiltersChange({ ...values, [fd.key]: v })}
+                  placeholder="Все"
+                  loading={Boolean(filtersLoading) || Boolean(lazyFilterLoading?.[fd.key])}
+                />
+              ))}
 
-        {dateFilterCol !== null && (
-          <div className="flex flex-col gap-1 lg:col-span-2">
-            <label className="block text-sm font-medium text-on-surface">Период</label>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-center">
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={e => onDateChange(e.target.value, dateTo)}
-                className="ui-field min-w-0 rounded-xl px-3 py-2.5 text-sm focus:border-primary focus:outline-none"
-              />
-              <span className="hidden text-center text-outline-variant sm:block">—</span>
-              <input
-                type="date"
-                value={dateTo}
-                onChange={e => onDateChange(dateFrom, e.target.value)}
-                className="ui-field min-w-0 rounded-xl px-3 py-2.5 text-sm focus:border-primary focus:outline-none"
-              />
+              {dateFilterCol !== null && (
+                <div className="flex flex-col gap-1 lg:col-span-2">
+                  <label className="block text-sm font-medium text-on-surface">Период</label>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-center">
+                    <input
+                      type="date"
+                      value={dateFrom}
+                      onChange={e => onDateChange(e.target.value, dateTo)}
+                      className="ui-field min-w-0 rounded-xl px-3 py-2.5 text-sm focus:border-primary focus:outline-none"
+                    />
+                    <span className="hidden text-center text-outline-variant sm:block">—</span>
+                    <input
+                      type="date"
+                      value={dateTo}
+                      onChange={e => onDateChange(dateFrom, e.target.value)}
+                      className="ui-field min-w-0 rounded-xl px-3 py-2.5 text-sm focus:border-primary focus:outline-none"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
+          </section>
+        )}
+
+        {secondaryDefs.length > 0 && (
+          <section className="rounded-xl border border-outline-variant/20 bg-surface-container-low/40 p-4">
+            <h3 className="mb-1 font-headline text-xs font-semibold uppercase tracking-wide text-outline-variant">
+              Дополнительные фильтры
+            </h3>
+            <p className="mb-3 text-[11px] leading-snug text-outline-variant">
+              Загружаются при первом открытии списка — чтобы не замедлять первую загрузку страницы.
+            </p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {secondaryDefs.map(fd => (
+                <MultiSelect
+                  key={fd.key}
+                  label={fd.label}
+                  options={options[fd.key] ?? []}
+                  value={values[fd.key] ?? []}
+                  onChange={v => onFiltersChange({ ...values, [fd.key]: v })}
+                  placeholder="Все"
+                  loading={Boolean(lazyFilterLoading?.[fd.key])}
+                  onOpenChange={open => {
+                    if (open) onLazyFilterOpen?.(fd.key);
+                  }}
+                />
+              ))}
+            </div>
+          </section>
         )}
       </div>
 

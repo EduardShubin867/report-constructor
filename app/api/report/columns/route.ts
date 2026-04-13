@@ -4,7 +4,7 @@
  * Hidden columns (flagged in the schema) are excluded.
  */
 import { NextRequest } from 'next/server';
-import { getVisibleColumnDefs } from '@/lib/visible-columns';
+import { getVisibleColumnDefs, getGroupByColumnDefs } from '@/lib/visible-columns';
 import { getManualReportSources } from '@/lib/schema';
 
 export const dynamic = 'force-dynamic';
@@ -14,5 +14,6 @@ export async function GET(request: NextRequest) {
     ?? getManualReportSources()[0]?.id
     ?? '';
   const columns = getVisibleColumnDefs(sourceId);
-  return Response.json({ columns });
+  const groupByColumns = getGroupByColumnDefs(sourceId);
+  return Response.json({ columns, groupByColumns });
 }
