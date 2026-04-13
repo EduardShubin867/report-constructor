@@ -4,41 +4,23 @@ export interface ColumnDef {
   key: string;
   label: string;
   type: ColumnType;
-  /** If set, this column is fetched via a LEFT JOIN and needs sqlExpr for SELECT */
+  /** Число без дробной части в таблице / Excel (например кол-во договоров). */
+  integer?: boolean;
+  /** If set, this column is fetched via a LEFT JOIN; value is the FK alias from schema */
   joinKey?: string;
-  /** SQL expression used in SELECT (e.g. "[j_терр].[Наименование]") */
+  /** SQL expression used in SELECT (e.g. "[dg].[Наименование]") */
   sqlExpr?: string;
+  /** If true, column is available as a GROUP BY dimension */
+  groupable?: boolean;
 }
 
 /**
- * JOIN definitions — alias used consistently across SELECT and JOIN clause.
- * Filters that reference these tables use subqueries (no JOIN needed for COUNT).
+ * Static label/metadata reference for known columns.
+ * Serves as a lookup table for UI labels and JOIN-derived column definitions.
+ * Logic (hidden, filterable, groupable, dateFilter) now comes from data/sources.json.
+ *
+ * FK column aliases use the schema FK alias (dg, ter, krm, krp).
  */
-export interface JoinDef {
-  key: string;
-  /** Full LEFT JOIN SQL snippet using the alias */
-  sql: string;
-}
-
-export const JOINS: Record<string, JoinDef> = {
-  территория: {
-    key: 'территория',
-    sql: 'LEFT JOIN [dbo].[Территории] AS [j_терр] ON m.[ID_ТерриторияИспользованияТС] = [j_терр].[ID]',
-  },
-  дг: {
-    key: 'дг',
-    sql: 'LEFT JOIN [dbo].[ДГ] AS [j_дг] ON m.[ID_ДГ] = [j_дг].[Код]',
-  },
-  крм: {
-    key: 'крм',
-    sql: 'LEFT JOIN [dbo].[КРМ] AS [j_крм] ON m.[ID_КРМ] = [j_крм].[ID]',
-  },
-  крп: {
-    key: 'крп',
-    sql: 'LEFT JOIN [dbo].[КРП] AS [j_крп] ON m.[ID_КРП] = [j_крп].[ID]',
-  },
-};
-
 export const ALL_COLUMNS: ColumnDef[] = [
   // --- Main table columns ---
   { key: 'НомерДоговора', label: 'Номер договора', type: 'string' },
@@ -79,46 +61,57 @@ export const ALL_COLUMNS: ColumnDef[] = [
   { key: 'ЗаработаноДоля', label: 'Заработано доля', type: 'number' },
   { key: 'ЗаработаннаяПремияОСАГОПлюсКросс', label: 'Заработанная премия ОСАГО+Кросс', type: 'number' },
 
-  // --- JOIN columns ---
+  // --- JOIN-derived columns (aliases match schema foreignKeys) ---
   {
     key: 'ТерриторияНаименование',
     label: 'Территория (название)',
     type: 'string',
-    joinKey: 'территория',
-    sqlExpr: '[j_терр].[Наименование]',
+    joinKey: 'ter',
+    sqlExpr: '[ter].[Наименование]',
   },
   {
     key: 'ТерриторияКТ',
     label: 'Территория КТ',
     type: 'number',
-    joinKey: 'территория',
-    sqlExpr: '[j_терр].[КТ]',
+    joinKey: 'ter',
+    sqlExpr: '[ter].[КТ]',
   },
   {
     key: 'ДГНаименование',
     label: 'ДГ (название)',
     type: 'string',
-    joinKey: 'дг',
-    sqlExpr: '[j_дг].[Наименование]',
+    joinKey: 'dg',
+    sqlExpr: '[dg].[Наименование]',
   },
   {
     key: 'КРМзначение',
     label: 'КРМ',
     type: 'number',
-    joinKey: 'крм',
-    sqlExpr: '[j_крм].[КРМ]',
+    joinKey: 'krm',
+    sqlExpr: '[krm].[КРМ]',
   },
   {
     key: 'КРПзначение',
     label: 'КРП',
     type: 'number',
-    joinKey: 'крп',
-    sqlExpr: '[j_крп].[КРП]',
+    joinKey: 'krp',
+    sqlExpr: '[krp].[КРП]',
   },
 ];
 
-/** Set of all valid column keys — used for allowlist validation */
-export const COLUMN_KEYS = new Set(ALL_COLUMNS.map(c => c.key));
+/**
+ * O(1) lookup map: column key → metadata.
+ * Used by visible-columns.ts to resolve labels and sqlExpr for known columns.
+ */
+export const COLUMN_LABEL_MAP = new Map(ALL_COLUMNS.map(c => [c.key, c]));
+
+/**
+ * Lookup by sqlExpr — used by visible-columns.ts to match FK-derived columns
+ * from schema foreignKeys to their known key/label entries.
+ */
+export const COLUMN_BY_SQL_EXPR = new Map(
+  ALL_COLUMNS.filter(c => c.sqlExpr).map(c => [c.sqlExpr!, c]),
+);
 
 export const DEFAULT_COLUMNS: string[] = [
   'НомерДоговора',
@@ -132,3 +125,5 @@ export const DEFAULT_COLUMNS: string[] = [
   'Регион',
 ];
 
+/** Ключ колонки COUNT(*) в сгруппированном ручном отчёте (совпадает с AS в SQL). */
+export const CONTRACT_COUNT_COLUMN_KEY = 'КоличествоДоговоров';

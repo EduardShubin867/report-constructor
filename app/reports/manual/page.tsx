@@ -1,29 +1,40 @@
 import type { Metadata } from 'next';
 import ManualReportRoute from '@/components/ManualReportRoute';
-import {
-  EMPTY_REPORT_FILTER_OPTIONS,
-  loadReportFilterOptions,
-  type ReportFilterOptions,
-} from '@/lib/report-filters-data';
+import { loadSourceFilterOptions, type ManualReportSourcePayload } from '@/lib/report-filters-data';
+import { getManualReportSources } from '@/lib/schema';
+import { getVisibleColumnDefs } from '@/lib/visible-columns';
 
-export const metadata: Metadata = {
-  title: 'Конструктор — Отчёты',
-};
+export const metadata: Metadata = { title: 'Конструктор — Отчёты' };
 
-// Filter dictionaries change rarely; let Next ISR the shell and reuse
-// the `unstable_cache`-wrapped loader for data.
-export const revalidate = 300;
-
-async function prefetchFilters(): Promise<{ options: ReportFilterOptions; error: boolean }> {
+async function bootstrapManualSource(id: string): Promise<ManualReportSourcePayload> {
+  let filterOptions;
+  let filterError = false;
   try {
-    return { options: await loadReportFilterOptions(), error: false };
-  } catch (error) {
-    console.error('Failed to prefetch report filters:', error);
-    return { options: EMPTY_REPORT_FILTER_OPTIONS, error: true };
+    filterOptions = await loadSourceFilterOptions(id);
+  } catch {
+    filterOptions = { filterDefs: [], options: {}, dateFilterCol: null };
+    filterError = true;
   }
+  return {
+    columns: getVisibleColumnDefs(id),
+    filterOptions,
+    filterError,
+  };
 }
 
 export default async function ReportsManualPage() {
-  const { options, error } = await prefetchFilters();
-  return <ManualReportRoute initialFilterOptions={options} initialFilterError={error} />;
+  const sources = getManualReportSources().map(s => ({ id: s.id, name: s.name }));
+  const defaultSourceId = sources[0]?.id ?? '';
+
+  const payloads = await Promise.all(sources.map(async ({ id }) => [id, await bootstrapManualSource(id)] as const));
+  const initialBootstrapBySourceId: Record<string, ManualReportSourcePayload> =
+    payloads.length > 0 ? (Object.fromEntries(payloads) as Record<string, ManualReportSourcePayload>) : {};
+
+  return (
+    <ManualReportRoute
+      initialSourceId={defaultSourceId}
+      sources={sources}
+      initialBootstrapBySourceId={initialBootstrapBySourceId}
+    />
+  );
 }

@@ -1,38 +1,117 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool, queryWithTimeout, TIMEOUT } from '@/lib/db';
-import { ALL_COLUMNS } from '@/lib/report-columns';
-import { buildWhere, buildSelectAndJoins, safeColumns, type ReportFilters } from '@/lib/query-builder';
+import {
+  buildGenericWhere,
+  buildGenericSelectAndJoins,
+  buildGroupedSelectAndJoins,
+  safeColumns,
+  safeDetailSortColumn,
+  safeGroupedSortColumn,
+  CONTRACT_COUNT_COLUMN_KEY,
+  type GenericReportRequest,
+} from '@/lib/query-builder';
+import { getDataSources, getManualReportSources } from '@/lib/schema';
+import { getVisibleColumnDefs, getSourceTableRef } from '@/lib/visible-columns';
 import ExcelJS from 'exceljs';
 
 export async function POST(request: NextRequest) {
   try {
-    const body: ReportFilters = await request.json();
-    const cols = safeColumns(body.columns ?? []);
+    const body: GenericReportRequest = await request.json();
+
+    const sourceId = body.sourceId ?? getManualReportSources()[0]?.id ?? '';
+    const source = getDataSources().find(s => s.id === sourceId);
+    if (!source) {
+      return NextResponse.json({ error: 'Источник не найден' }, { status: 400 });
+    }
+
+    const cols = safeColumns(body.columns ?? [], sourceId);
     if (cols.length === 0) {
       return NextResponse.json({ error: 'Не выбраны колонки' }, { status: 400 });
     }
 
-    const { select, joins } = buildSelectAndJoins(cols);
+    const groupBy = safeColumns(body.groupBy ?? [], sourceId);
+    const tableRef = getSourceTableRef(sourceId);
+    const filters = body.filters ?? {};
+    const allDefs = getVisibleColumnDefs(sourceId);
     const pool = await getPool();
-    const dataReq = pool.request();
-    const where = buildWhere(dataReq, body);
 
-    const result = await queryWithTimeout(dataReq,
-      `SELECT ${select}
-       FROM [dbo].[Журнал_ОСАГО_Маржа] m
-       ${joins}
-       ${where}
-       ORDER BY m.[ДатаЗаключения] DESC`,
-      TIMEOUT.EXPORT,
-    );
+    let result;
+    let colDefs;
 
-    const colDefs = cols.map(key => ALL_COLUMNS.find(c => c.key === key)!).filter(Boolean);
+    if (groupBy.length > 0) {
+      const includeContractCount = body.includeContractCount !== false;
+      const { select, joins, groupByClause } = buildGroupedSelectAndJoins(cols, groupBy, sourceId, {
+        includeContractCount,
+      });
+      const sortDirRaw = body.sortDirection;
+      const sortDir =
+        sortDirRaw === 'asc' ? 'ASC' : sortDirRaw === 'desc' ? 'DESC' : null;
+      const sortCol =
+        sortDir && body.sortColumn
+          ? safeGroupedSortColumn(body.sortColumn, cols, groupBy, sourceId, includeContractCount)
+          : null;
+      const orderBySql =
+        sortCol && sortDir
+          ? `ORDER BY [${sortCol}] ${sortDir}`
+          : `ORDER BY [${groupBy[0]}]`;
+      const dataReq = pool.request();
+      const where = buildGenericWhere(dataReq, filters, source, body.dateFrom, body.dateTo);
+
+      result = await queryWithTimeout(dataReq,
+        `SELECT ${select}
+         FROM ${tableRef}
+         ${joins}
+         ${where}
+         ${groupByClause}
+         ${orderBySql}`,
+        TIMEOUT.EXPORT,
+      );
+
+      const groupBySet = new Set(groupBy);
+      const requestedDefs = cols.map(k => allDefs.find(c => c.key === k)!).filter(Boolean);
+      colDefs = [
+        ...requestedDefs.filter(c => groupBySet.has(c.key)),
+        ...requestedDefs.filter(c => !groupBySet.has(c.key) && c.type === 'number'),
+        ...(includeContractCount
+          ? [{ key: CONTRACT_COUNT_COLUMN_KEY, label: 'Кол-во договоров', type: 'number' as const, integer: true }]
+          : []),
+      ];
+    } else {
+      const { select, joins } = buildGenericSelectAndJoins(cols, sourceId);
+      const mainTable = source.tables.find(t => t.columns.length > 0);
+      const dateCol = mainTable?.columns.find(c => c.dateFilter)?.name;
+      const tableAlias = mainTable?.alias ?? 'm';
+      const sortDirRaw = body.sortDirection;
+      const sortDir =
+        sortDirRaw === 'asc' ? 'ASC' : sortDirRaw === 'desc' ? 'DESC' : null;
+      const sortCol =
+        sortDir && body.sortColumn ? safeDetailSortColumn(body.sortColumn, cols, sourceId) : null;
+      const orderBy =
+        sortCol && sortDir
+          ? `ORDER BY [${sortCol}] ${sortDir}`
+          : dateCol
+            ? `ORDER BY ${tableAlias}.[${dateCol}] DESC`
+            : `ORDER BY ${tableAlias}.[ID] DESC`;
+
+      const dataReq = pool.request();
+      const where = buildGenericWhere(dataReq, filters, source, body.dateFrom, body.dateTo);
+
+      result = await queryWithTimeout(dataReq,
+        `SELECT ${select}
+         FROM ${tableRef}
+         ${joins}
+         ${where}
+         ${orderBy}`,
+        TIMEOUT.EXPORT,
+      );
+      colDefs = cols.map(key => allDefs.find(c => c.key === key)!).filter(Boolean);
+    }
 
     const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'Генератор отчётов ОСАГО';
+    workbook.creator = 'Генератор отчётов';
     workbook.created = new Date();
 
-    const sheet = workbook.addWorksheet('Отчёт ОСАГО', {
+    const sheet = workbook.addWorksheet('Отчёт', {
       views: [{ state: 'frozen', ySplit: 1 }],
     });
 
@@ -61,10 +140,9 @@ export async function POST(request: NextRequest) {
       sheet.addRow(rowData);
     }
 
-    for (const col of colDefs) {
-      if (col.type === 'number') {
-        const colIndex = cols.indexOf(col.key) + 1;
-        sheet.getColumn(colIndex).numFmt = '#,##0.00';
+    for (let i = 0; i < colDefs.length; i++) {
+      if (colDefs[i].type === 'number') {
+        sheet.getColumn(i + 1).numFmt = colDefs[i].integer ? '#,##0' : '#,##0.00';
       }
     }
 

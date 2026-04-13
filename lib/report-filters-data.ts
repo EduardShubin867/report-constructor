@@ -1,64 +1,123 @@
 import { unstable_cache } from 'next/cache';
+import { getDataSources } from '@/lib/schema';
 import { getPool, queryWithTimeout, TIMEOUT } from '@/lib/db';
+import type { ColumnDef } from '@/lib/report-columns';
+import type { DataSource, TableSchema } from '@/lib/schema/types';
 
-export interface ReportFilterOptions {
-  агенты: string[];
-  регионы: string[];
-  видыДоговора: string[];
-  территории: string[];
-  дг: string[];
-  крм: string[];
-  крп: string[];
+/** Next.js Data Cache TTL for DISTINCT filter-option SQL (seconds). */
+export const REPORT_FILTER_OPTIONS_REVALIDATE = 300;
+
+/**
+ * Pass to `revalidateTag()` to drop all cached `loadSourceFilterOptions` entries
+ * (every `sourceId` shares this tag).
+ */
+export const REPORT_FILTER_OPTIONS_CACHE_TAG = 'manual-report-filter-options';
+
+export interface FilterDef {
+  /** Column name (direct) or FK alias (fk) — used as key in filter values Record */
+  key: string;
+  /** Human-readable label for the filter control */
+  label: string;
+  /** 'direct' = plain column IN filter; 'fk' = reference table lookup */
+  type: 'direct' | 'fk';
 }
 
-export const EMPTY_REPORT_FILTER_OPTIONS: ReportFilterOptions = {
-  агенты: [],
-  регионы: [],
-  видыДоговора: [],
-  территории: [],
-  дг: [],
-  крм: [],
-  крп: [],
-};
+export interface SourceFilterOptions {
+  filterDefs: FilterDef[];
+  options: Record<string, string[]>;
+  /** Column name used for date-range filter, or null if none */
+  dateFilterCol: string | null;
+}
 
-export const REPORT_FILTERS_CACHE_TAG = 'report-filters';
+function getMainTable(source: DataSource): TableSchema | null {
+  return source.tables.find(t => t.columns.length > 0) ?? null;
+}
 
-async function fetchReportFilterOptions(): Promise<ReportFilterOptions> {
+async function loadSourceFilterOptionsUncached(sourceId: string): Promise<SourceFilterOptions> {
+  const source = getDataSources().find(s => s.id === sourceId);
+  if (!source) return { filterDefs: [], options: {}, dateFilterCol: null };
+
+  const table = getMainTable(source);
+  if (!table) return { filterDefs: [], options: {}, dateFilterCol: null };
+
   const pool = await getPool();
+  const schema = source.schema;
+  const tableName = `[${schema}].[${table.name}]`;
   const t = TIMEOUT.QUERY;
 
-  const [агенты, регионы, видыДоговора, территории, дг, крм, крп] = await Promise.all([
-    queryWithTimeout(pool.request(),
-      'SELECT DISTINCT Агент FROM [dbo].[Журнал_ОСАГО_Маржа] WHERE Агент IS NOT NULL ORDER BY Агент', t),
-    queryWithTimeout(pool.request(),
-      'SELECT DISTINCT Регион FROM [dbo].[Журнал_ОСАГО_Маржа] WHERE Регион IS NOT NULL ORDER BY Регион', t),
-    queryWithTimeout(pool.request(),
-      'SELECT DISTINCT ВидДоговора FROM [dbo].[Журнал_ОСАГО_Маржа] WHERE ВидДоговора IS NOT NULL ORDER BY ВидДоговора', t),
-    queryWithTimeout(pool.request(),
-      'SELECT DISTINCT Наименование FROM [dbo].[Территории] WHERE Наименование IS NOT NULL AND ПометкаУдаления = 0 ORDER BY Наименование', t),
-    queryWithTimeout(pool.request(),
-      'SELECT DISTINCT Наименование FROM [dbo].[ДГ] WHERE Наименование IS NOT NULL ORDER BY Наименование', t),
-    queryWithTimeout(pool.request(),
-      'SELECT DISTINCT КРМ FROM [dbo].[КРМ] ORDER BY КРМ', t),
-    queryWithTimeout(pool.request(),
-      'SELECT DISTINCT КРП FROM [dbo].[КРП] ORDER BY КРП', t),
-  ]);
+  const filterDefs: FilterDef[] = [];
+  const queries: { key: string; sql: string }[] = [];
 
-  return {
-    агенты: агенты.recordset.map(r => String(r.Агент)),
-    регионы: регионы.recordset.map(r => String(r.Регион)),
-    видыДоговора: видыДоговора.recordset.map(r => String(r.ВидДоговора)),
-    территории: территории.recordset.map(r => String(r.Наименование)),
-    дг: дг.recordset.map(r => String(r.Наименование)),
-    крм: крм.recordset.map(r => String(r.КРМ)),
-    крп: крп.recordset.map(r => String(r.КРП)),
-  };
+  // Direct filters — filterable columns
+  for (const col of table.columns) {
+    if (!col.filterable || col.hidden) continue;
+    const label = col.label ?? col.name;
+    filterDefs.push({ key: col.name, label, type: 'direct' });
+    queries.push({
+      key: col.name,
+      sql: `SELECT DISTINCT [${col.name}] AS v FROM ${tableName} WHERE [${col.name}] IS NOT NULL ORDER BY [${col.name}]`,
+    });
+  }
+
+  // FK filters — foreignKeys with filterConfig
+  for (const fk of table.foreignKeys ?? []) {
+    if (!fk.filterConfig) continue;
+    const { displayField, label, targetWhere } = fk.filterConfig;
+    const targetTableRef = `[${schema}].[${fk.targetTable}]`;
+    const whereClause = targetWhere ? ` WHERE ${targetWhere}` : '';
+    filterDefs.push({ key: fk.alias, label, type: 'fk' });
+    queries.push({
+      key: fk.alias,
+      sql: `SELECT DISTINCT [${displayField}] AS v FROM ${targetTableRef}${whereClause} ORDER BY [${displayField}]`,
+    });
+  }
+
+  // Date filter column
+  const dateFilterCol = table.columns.find(c => c.dateFilter)?.name ?? null;
+
+  // Execute all queries in parallel
+  const results = await Promise.all(
+    queries.map(({ key, sql: querySql }) =>
+      queryWithTimeout(pool.request(), querySql, t)
+        .then(r => ({ key, values: r.recordset.map(row => String(row['v'])) }))
+        .catch(() => ({ key, values: [] })),
+    ),
+  );
+
+  const options: Record<string, string[]> = {};
+  for (const { key, values } of results) {
+    options[key] = values;
+  }
+
+  return { filterDefs, options, dateFilterCol };
 }
 
-// Cached by Next.js on the server: shared across requests, 5-minute TTL,
-// invalidatable via `revalidateTag(REPORT_FILTERS_CACHE_TAG)`.
-export const loadReportFilterOptions = unstable_cache(
-  fetchReportFilterOptions,
-  ['report-filter-options'],
-  { revalidate: 300, tags: [REPORT_FILTERS_CACHE_TAG] },
+const loadSourceFilterOptionsCached = unstable_cache(
+  async (sourceId: string) => loadSourceFilterOptionsUncached(sourceId),
+  ['loadSourceFilterOptions'],
+  {
+    revalidate: REPORT_FILTER_OPTIONS_REVALIDATE,
+    tags: [REPORT_FILTER_OPTIONS_CACHE_TAG],
+  },
 );
+
+/**
+ * Loads filter definitions and option values for a data source.
+ *
+ * - Direct filters: columns with filterable: true → SELECT DISTINCT [col] FROM [table]
+ * - FK filters: foreignKeys with filterConfig → SELECT DISTINCT [displayField] FROM [targetTable] [WHERE targetWhere]
+ * - dateFilterCol: name of the column with dateFilter: true (for date-range UI)
+ *
+ * Results are cached in the Next.js Data Cache per `sourceId` (see `REPORT_FILTER_OPTIONS_REVALIDATE`).
+ */
+export async function loadSourceFilterOptions(sourceId: string): Promise<SourceFilterOptions> {
+  return loadSourceFilterOptionsCached(sourceId);
+}
+
+/** Server-prefetched bundle for one manual-report source (columns + filter dropdown data). */
+export type ManualReportSourcePayload = {
+  columns: ColumnDef[];
+  filterOptions: SourceFilterOptions;
+  /** True when `loadSourceFilterOptions` threw — UI may retry via `/api/report/filters`. */
+  filterError: boolean;
+};

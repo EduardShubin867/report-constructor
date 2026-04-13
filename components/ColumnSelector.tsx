@@ -9,9 +9,20 @@ interface ColumnSelectorProps {
   onChange: (cols: string[]) => void;
   /** Override the column list (e.g. server-filtered visible columns). Defaults to ALL_COLUMNS. */
   columns?: ColumnDef[];
+  /** При активной группировке — опция колонки COUNT договоров. */
+  groupByActive?: boolean;
+  showContractCount?: boolean;
+  onShowContractCountChange?: (value: boolean) => void;
 }
 
-export default function ColumnSelector({ selected, onChange, columns }: ColumnSelectorProps) {
+export default function ColumnSelector({
+  selected,
+  onChange,
+  columns,
+  groupByActive = false,
+  showContractCount = true,
+  onShowContractCountChange,
+}: ColumnSelectorProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const cols = columns ?? ALL_COLUMNS;
@@ -98,6 +109,17 @@ export default function ColumnSelector({ selected, onChange, columns }: ColumnSe
               ))}
             </div>
           )}
+          {groupByActive && onShowContractCountChange ? (
+            <label className="mt-4 flex cursor-pointer items-center gap-2 border-t border-outline-variant/10 pt-4 text-sm text-on-surface">
+              <input
+                type="checkbox"
+                checked={showContractCount}
+                onChange={e => onShowContractCountChange(e.target.checked)}
+                className="shrink-0 accent-primary"
+              />
+              <span>Показывать колонку «Кол-во договоров»</span>
+            </label>
+          ) : null}
         </div>
       )}
     </div>

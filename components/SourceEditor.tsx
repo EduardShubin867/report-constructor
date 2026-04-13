@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BASE_PATH } from '@/lib/constants';
-import type { DataSource, ForeignKey, StoredConnection } from '@/lib/schema/types';
+import type { DataSource, ForeignKey, ForeignKeyFilterConfig, StoredConnection } from '@/lib/schema/types';
 
 type Phase = 'idle' | 'introspecting' | 'review' | 'saving' | 'saved';
 
@@ -46,6 +46,8 @@ export default function SourceEditor({ connections, initial, onSaved }: Props) {
   const [source, setSource] = useState<DataSource | null>(initial ?? null);
   const [rescanningTable, setRescanningTable] = useState<string | null>(null);
   const [rescanMsg, setRescanMsg] = useState<Record<string, string>>({});
+  // Track which FK filter forms are open: key = `${tableIdx}-${fkIdx}`
+  const [fkFilterOpen, setFkFilterOpen] = useState<Record<string, boolean>>({});
 
   function setField(key: keyof typeof EMPTY_FORM, value: string) {
     setForm(f => ({ ...f, [key]: value }));
@@ -173,6 +175,85 @@ export default function SourceEditor({ connections, initial, onSaved }: Props) {
           hidden ? { ...c, hidden: true } : { ...c, hidden: undefined },
         );
         return { ...t, columns };
+      });
+      return { ...s, tables };
+    });
+  }
+
+  function toggleGroupable(tableIdx: number, colIdx: number) {
+    if (!source) return;
+    setSource(s => {
+      if (!s) return s;
+      const tables = s.tables.map((t, ti) => {
+        if (ti !== tableIdx) return t;
+        const columns = t.columns.map((c, ci) => {
+          if (ci !== colIdx) return c;
+          return c.groupable ? { ...c, groupable: undefined } : { ...c, groupable: true };
+        });
+        return { ...t, columns };
+      });
+      return { ...s, tables };
+    });
+  }
+
+  function setDateFilter(tableIdx: number, colIdx: number) {
+    if (!source) return;
+    setSource(s => {
+      if (!s) return s;
+      const tables = s.tables.map((t, ti) => {
+        if (ti !== tableIdx) return t;
+        const columns = t.columns.map((c, ci) => {
+          if (ci !== colIdx) return { ...c, dateFilter: undefined };
+          // Clicking again clears it
+          return c.dateFilter ? { ...c, dateFilter: undefined } : { ...c, dateFilter: true };
+        });
+        return { ...t, columns };
+      });
+      return { ...s, tables };
+    });
+  }
+
+  function toggleManualReport() {
+    if (!source) return;
+    setSource(s => {
+      if (!s) return s;
+      return { ...s, manualReport: !s.manualReport };
+    });
+  }
+
+  function toggleFkFilter(tableIdx: number, fkIdx: number) {
+    const key = `${tableIdx}-${fkIdx}`;
+    const isOpen = fkFilterOpen[key];
+    setFkFilterOpen(prev => ({ ...prev, [key]: !isOpen }));
+    // When closing, clear filterConfig
+    if (isOpen) {
+      setSource(s => {
+        if (!s) return s;
+        const tables = s.tables.map((t, ti) => {
+          if (ti !== tableIdx) return t;
+          const foreignKeys = (t.foreignKeys ?? []).map((fk, fi) => {
+            if (fi !== fkIdx) return fk;
+            return { ...fk, filterConfig: undefined };
+          });
+          return { ...t, foreignKeys };
+        });
+        return { ...s, tables };
+      });
+    }
+  }
+
+  function setFkFilterConfig(tableIdx: number, fkIdx: number, config: Partial<ForeignKeyFilterConfig>) {
+    if (!source) return;
+    setSource(s => {
+      if (!s) return s;
+      const tables = s.tables.map((t, ti) => {
+        if (ti !== tableIdx) return t;
+        const foreignKeys = (t.foreignKeys ?? []).map((fk, fi) => {
+          if (fi !== fkIdx) return fk;
+          const existing = fk.filterConfig ?? { displayField: '', label: '' };
+          return { ...fk, filterConfig: { ...existing, ...config } };
+        });
+        return { ...t, foreignKeys };
       });
       return { ...s, tables };
     });
@@ -368,12 +449,33 @@ export default function SourceEditor({ connections, initial, onSaved }: Props) {
           >
             {mainTable && (
               <div>
-                <div className="flex items-center gap-2 mb-2">
+                {/* Header row with table name + manualReport toggle */}
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
                   <h3 className="text-sm font-semibold text-zinc-200">{mainTable.name}</h3>
                   {mainTable.alias && (
                     <span className="text-xs bg-zinc-700 text-zinc-300 rounded px-1.5 py-0.5">alias: {mainTable.alias}</span>
                   )}
                   <span className="text-xs text-zinc-500">{mainTable.columns.length} колонок</span>
+
+                  {/* manualReport toggle */}
+                  <button
+                    onClick={toggleManualReport}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded border text-xs transition-colors ${
+                      source.manualReport
+                        ? 'border-emerald-600 bg-emerald-950/60 text-emerald-300'
+                        : 'border-zinc-700 bg-zinc-800/40 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600'
+                    }`}
+                  >
+                    <span className={`w-3 h-3 rounded border flex items-center justify-center flex-shrink-0 ${
+                      source.manualReport
+                        ? 'bg-emerald-600 border-emerald-500 text-white'
+                        : 'border-zinc-600'
+                    }`}>
+                      {source.manualReport && <span className="text-[8px] leading-none">✓</span>}
+                    </span>
+                    Доступен в ручном отчёте
+                  </button>
+
                   {isEdit && (
                     <button
                       onClick={() => handleRescan(mainTable.name)}
@@ -407,6 +509,8 @@ export default function SourceEditor({ connections, initial, onSaved }: Props) {
                         <th className="text-left px-3 py-2 font-medium">Колонка</th>
                         <th className="text-left px-3 py-2 font-medium">Тип</th>
                         <th className="text-center px-3 py-2 font-medium">Filterable</th>
+                        <th className="text-center px-3 py-2 font-medium">Groupable</th>
+                        <th className="text-center px-3 py-2 font-medium">Дата</th>
                         <th className="text-center px-3 py-2 font-medium">
                           <div className="flex flex-col items-center gap-0.5">
                             <span>Видима</span>
@@ -434,6 +538,8 @@ export default function SourceEditor({ connections, initial, onSaved }: Props) {
                           date: 'text-yellow-400',
                           bit: 'text-purple-400',
                         };
+                        const canGroupable = col.type === 'string' || col.type === 'date';
+                        const canDateFilter = col.type === 'date';
                         return (
                           <tr key={col.name} className={`border-t border-zinc-800 hover:bg-zinc-800/30 transition-opacity ${col.hidden ? 'opacity-40' : ''}`}>
                             <td className="px-3 py-1.5 text-zinc-200 font-mono text-xs">{col.name}</td>
@@ -449,6 +555,38 @@ export default function SourceEditor({ connections, initial, onSaved }: Props) {
                               >
                                 ✓
                               </button>
+                            </td>
+                            <td className="px-3 py-1.5 text-center">
+                              {canGroupable ? (
+                                <button
+                                  onClick={() => toggleGroupable(ti, ci)}
+                                  className={`w-4 h-4 rounded border text-xs flex items-center justify-center mx-auto transition-colors ${
+                                    col.groupable
+                                      ? 'bg-violet-600 border-violet-500 text-white'
+                                      : 'border-zinc-600 text-transparent hover:border-zinc-400'
+                                  }`}
+                                >
+                                  ✓
+                                </button>
+                              ) : (
+                                <td />
+                              )}
+                            </td>
+                            <td className="px-3 py-1.5 text-center">
+                              {canDateFilter ? (
+                                <button
+                                  onClick={() => setDateFilter(ti, ci)}
+                                  className={`w-4 h-4 rounded-full border text-xs flex items-center justify-center mx-auto transition-colors ${
+                                    col.dateFilter
+                                      ? 'bg-yellow-600 border-yellow-500 text-white'
+                                      : 'border-zinc-600 hover:border-zinc-400'
+                                  }`}
+                                >
+                                  {col.dateFilter && <span className="w-2 h-2 rounded-full bg-white block" />}
+                                </button>
+                              ) : (
+                                <td />
+                              )}
                             </td>
                             <td className="px-3 py-1.5 text-center">
                               <button
@@ -472,13 +610,64 @@ export default function SourceEditor({ connections, initial, onSaved }: Props) {
                 {mainTable.foreignKeys && mainTable.foreignKeys.length > 0 && (
                   <div className="mt-3">
                     <h4 className="text-xs text-zinc-500 mb-1.5">Внешние ключи</h4>
-                    <div className="space-y-1">
-                      {mainTable.foreignKeys.map((fk: ForeignKey) => (
-                        <div key={fk.column} className="bg-zinc-800/50 rounded px-3 py-1.5 text-xs font-mono text-zinc-300">
-                          {fk.column} → [{source.schema}].[{fk.targetTable}].{fk.targetColumn}
-                          <span className="text-zinc-500 ml-2">alias: {fk.alias}</span>
-                        </div>
-                      ))}
+                    <div className="space-y-2">
+                      {mainTable.foreignKeys.map((fk: ForeignKey, fkIdx: number) => {
+                        const ti = source.tables.indexOf(mainTable);
+                        const key = `${ti}-${fkIdx}`;
+                        const isOpen = !!fkFilterOpen[key];
+                        const cfg = fk.filterConfig;
+                        return (
+                          <div key={fk.column} className="border border-zinc-700 rounded-lg overflow-hidden">
+                            <div className="bg-zinc-800/50 px-3 py-1.5 flex items-center gap-2">
+                              <span className="text-xs font-mono text-zinc-300 flex-1">
+                                {fk.column} → [{source.schema}].[{fk.targetTable}].{fk.targetColumn}
+                                <span className="text-zinc-500 ml-2">alias: {fk.alias}</span>
+                              </span>
+                              <button
+                                onClick={() => toggleFkFilter(ti, fkIdx)}
+                                className={`px-2 py-0.5 rounded border text-xs transition-colors ${
+                                  isOpen
+                                    ? 'border-amber-600 bg-amber-950/60 text-amber-300'
+                                    : 'border-zinc-600 bg-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500'
+                                }`}
+                              >
+                                Фильтр
+                              </button>
+                            </div>
+                            {isOpen && (
+                              <div className="px-3 py-2 bg-zinc-900/60 border-t border-zinc-700 flex flex-wrap gap-2">
+                                <label className="flex flex-col gap-0.5 flex-1 min-w-[120px]">
+                                  <span className="text-[10px] text-zinc-500">displayField</span>
+                                  <input
+                                    className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-zinc-500 font-mono"
+                                    placeholder="Наименование"
+                                    value={cfg?.displayField ?? ''}
+                                    onChange={e => setFkFilterConfig(ti, fkIdx, { displayField: e.target.value })}
+                                  />
+                                </label>
+                                <label className="flex flex-col gap-0.5 flex-1 min-w-[100px]">
+                                  <span className="text-[10px] text-zinc-500">label</span>
+                                  <input
+                                    className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-zinc-500"
+                                    placeholder="ДГ"
+                                    value={cfg?.label ?? ''}
+                                    onChange={e => setFkFilterConfig(ti, fkIdx, { label: e.target.value })}
+                                  />
+                                </label>
+                                <label className="flex flex-col gap-0.5 flex-1 min-w-[160px]">
+                                  <span className="text-[10px] text-zinc-500">targetWhere (опционально)</span>
+                                  <input
+                                    className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-zinc-500 font-mono"
+                                    placeholder="ПометкаУдаления = 0"
+                                    value={cfg?.targetWhere ?? ''}
+                                    onChange={e => setFkFilterConfig(ti, fkIdx, { targetWhere: e.target.value || undefined })}
+                                  />
+                                </label>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}

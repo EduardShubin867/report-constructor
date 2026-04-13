@@ -16,7 +16,11 @@ export interface ReportColumn {
   key: string;
   label: string;
   type?: 'string' | 'number' | 'date' | 'boolean';
+  /** Число показывать как целое (без ,00). */
+  integer?: boolean;
 }
+
+export type ServerSortDirection = 'asc' | 'desc' | null;
 
 interface UnifiedReportTableProps {
   data: Record<string, unknown>[];
@@ -28,17 +32,29 @@ interface UnifiedReportTableProps {
   onPageChange?: (page: number) => void;
   onPageSizeChange?: (size: number) => void;
   sortable?: boolean;
+  /** Режим server: клик по заголовку — цикл asc → desc → сброс (родитель шлёт запрос с sortColumn/sortDirection). */
+  serverSortColumn?: string | null;
+  serverSortDirection?: ServerSortDirection;
+  onServerSortClick?: (columnKey: string) => void;
   warnings?: string[];
   mode: 'server' | 'client';
 }
 
 const PAGE_SIZES = [50, 100, 200, 500];
 
-function formatValue(value: unknown, type?: string): string {
+function formatValue(value: unknown, type?: string, integer?: boolean): string {
   if (value === null || value === undefined) return '';
   if (type === 'date' && typeof value === 'string') {
     const d = new Date(value);
     return isNaN(d.getTime()) ? String(value) : d.toLocaleDateString('ru-RU');
+  }
+  if (type === 'number' && integer) {
+    const n = typeof value === 'number' ? value : Number(value);
+    if (Number.isNaN(n)) return String(value);
+    return Math.round(n).toLocaleString('ru-RU', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    });
   }
   if (type === 'number' && typeof value === 'number') {
     return value.toLocaleString('ru-RU', {
@@ -80,6 +96,9 @@ export default function UnifiedReportTable({
   onPageChange,
   onPageSizeChange,
   sortable = false,
+  serverSortColumn = null,
+  serverSortDirection = null,
+  onServerSortClick,
   warnings,
   mode,
 }: UnifiedReportTableProps) {
@@ -109,12 +128,13 @@ export default function UnifiedReportTable({
       columns.map(col => ({
         accessorKey: col.key,
         header: col.label,
-        cell: info => formatValue(info.getValue(), col.type),
+        cell: info => formatValue(info.getValue(), col.type, col.integer),
       })),
     [columns],
   );
 
   const isServer = mode === 'server';
+  const serverHeaderSort = Boolean(isServer && onServerSortClick);
 
   const table = useReactTable({
     data,
@@ -281,19 +301,28 @@ export default function UnifiedReportTable({
                   className="sticky top-0 z-10 bg-surface-container-low/95 backdrop-blur-sm"
                 >
                   {hg.headers.map(header => {
-                    const sorted = sortable
-                      ? header.column.getIsSorted()
-                      : false;
+                    const colKey = header.column.id;
+                    const clientSorted = sortable ? header.column.getIsSorted() : false;
+                    const serverSorted =
+                      serverHeaderSort &&
+                      serverSortColumn === colKey &&
+                      serverSortDirection
+                        ? serverSortDirection
+                        : false;
+                    const headerSortable = sortable || serverHeaderSort;
+                    const sortedIcon = sortable ? clientSorted : serverSorted;
                     return (
                       <th
                         key={header.id}
                         onClick={
                           sortable
                             ? header.column.getToggleSortingHandler()
-                            : undefined
+                            : serverHeaderSort
+                              ? () => onServerSortClick?.(colKey)
+                              : undefined
                         }
                         className={`whitespace-nowrap px-5 py-3 text-left text-[11px] font-bold uppercase tracking-[0.16em] text-on-surface-variant ${
-                          sortable
+                          headerSortable
                             ? 'cursor-pointer select-none transition-colors hover:bg-surface-container-low'
                             : ''
                         }`}
@@ -303,19 +332,19 @@ export default function UnifiedReportTable({
                             header.column.columnDef.header,
                             header.getContext(),
                           )}
-                          {sortable && sorted === 'asc' && (
+                          {headerSortable && sortedIcon === 'asc' && (
                             <ArrowUp
                               className="h-3 w-3 text-primary"
                               strokeWidth={2.2}
                             />
                           )}
-                          {sortable && sorted === 'desc' && (
+                          {headerSortable && sortedIcon === 'desc' && (
                             <ArrowDown
                               className="h-3 w-3 text-primary"
                               strokeWidth={2.2}
                             />
                           )}
-                          {sortable && !sorted && (
+                          {headerSortable && !sortedIcon && (
                             <ArrowUpDown
                               className="h-3 w-3 text-on-surface-variant opacity-30"
                               strokeWidth={2.2}
@@ -345,7 +374,7 @@ export default function UnifiedReportTable({
                               : ''
                           }`}
                         >
-                          {formatValue(row[col.key], col.type)}
+                          {formatValue(row[col.key], col.type, col.integer)}
                         </td>
                       ))}
                     </tr>

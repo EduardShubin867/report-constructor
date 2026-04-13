@@ -1,45 +1,133 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool, sql, queryWithTimeout, TIMEOUT } from '@/lib/db';
-import { buildWhere, buildSelectAndJoins, safeColumns, type ReportFilters } from '@/lib/query-builder';
+import {
+  buildGenericWhere,
+  buildGenericSelectAndJoins,
+  buildGroupedSelectAndJoins,
+  safeColumns,
+  safeDetailSortColumn,
+  safeGroupedSortColumn,
+  type GenericReportRequest,
+} from '@/lib/query-builder';
+import { getDataSources, getManualReportSources } from '@/lib/schema';
+import { getSourceTableRef, getSourceJoinDefs } from '@/lib/visible-columns';
 
-export type { ReportFilters };
+export type { GenericReportRequest };
 
 export async function POST(request: NextRequest) {
   try {
-    const body: ReportFilters = await request.json();
+    const body: GenericReportRequest = await request.json();
+
+    const sourceId = body.sourceId ?? getManualReportSources()[0]?.id ?? '';
+    const source = getDataSources().find(s => s.id === sourceId);
+    if (!source) {
+      return NextResponse.json({ error: 'Источник не найден' }, { status: 400 });
+    }
+
     const page = Math.max(1, body.page ?? 1);
     const pageSize = Math.min(500, Math.max(1, body.pageSize ?? 100));
     const offset = (page - 1) * pageSize;
 
-    const cols = safeColumns(body.columns ?? []);
+    const cols = safeColumns(body.columns ?? [], sourceId);
     if (cols.length === 0) {
       return NextResponse.json({ error: 'Не выбраны колонки' }, { status: 400 });
     }
 
+    const groupBy = safeColumns(body.groupBy ?? [], sourceId);
+    const tableRef = getSourceTableRef(sourceId);
+    const filters = body.filters ?? {};
     const pool = await getPool();
 
-    // COUNT (no JOINs needed — filters use subqueries)
+    if (groupBy.length > 0) {
+      // --- GROUPED MODE ---
+      const includeContractCount = body.includeContractCount !== false;
+      const { select, joins, groupByClause } = buildGroupedSelectAndJoins(cols, groupBy, sourceId, {
+        includeContractCount,
+      });
+      const sortDirRaw = body.sortDirection;
+      const sortDir =
+        sortDirRaw === 'asc' ? 'ASC' : sortDirRaw === 'desc' ? 'DESC' : null;
+      const sortCol =
+        sortDir && body.sortColumn
+          ? safeGroupedSortColumn(body.sortColumn, cols, groupBy, sourceId, includeContractCount)
+          : null;
+      const orderBySql =
+        sortCol && sortDir
+          ? `ORDER BY [${sortCol}] ${sortDir}`
+          : `ORDER BY [${groupBy[0]}]`;
+
+      // COUNT of groups (needs JOINs if groupBy references FK-derived cols)
+      const countReq = pool.request();
+      const where = buildGenericWhere(countReq, filters, source, body.dateFrom, body.dateTo);
+      const countResult = await queryWithTimeout(countReq,
+        `SELECT COUNT(*) AS total FROM (
+           SELECT 1 AS [_grp] FROM ${tableRef}
+           ${joins}
+           ${where}
+           ${groupByClause}
+         ) AS sub`,
+        TIMEOUT.REPORT,
+      );
+      const total = (countResult.recordset[0] as { total: number }).total;
+
+      const dataReq = pool.request();
+      buildGenericWhere(dataReq, filters, source, body.dateFrom, body.dateTo);
+      dataReq.input('offset', sql.Int, offset);
+      dataReq.input('pageSize', sql.Int, pageSize);
+
+      const dataResult = await queryWithTimeout(dataReq,
+        `SELECT ${select}
+         FROM ${tableRef}
+         ${joins}
+         ${where}
+         ${groupByClause}
+         ${orderBySql}
+         OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY`,
+        TIMEOUT.REPORT,
+      );
+
+      return NextResponse.json({ data: dataResult.recordset, total, page, pageSize });
+    }
+
+    // --- DETAIL MODE ---
+    // COUNT without JOINs (filters use subqueries for FK)
     const countReq = pool.request();
-    const where = buildWhere(countReq, body);
+    const where = buildGenericWhere(countReq, filters, source, body.dateFrom, body.dateTo);
     const countResult = await queryWithTimeout(countReq,
-      `SELECT COUNT(*) AS total FROM [dbo].[Журнал_ОСАГО_Маржа] m ${where}`,
+      `SELECT COUNT(*) AS total FROM ${tableRef} ${where}`,
       TIMEOUT.REPORT,
     );
     const total = (countResult.recordset[0] as { total: number }).total;
 
-    // DATA
-    const { select, joins } = buildSelectAndJoins(cols);
+    const { select, joins } = buildGenericSelectAndJoins(cols, sourceId);
     const dataReq = pool.request();
-    buildWhere(dataReq, body);
+    buildGenericWhere(dataReq, filters, source, body.dateFrom, body.dateTo);
     dataReq.input('offset', sql.Int, offset);
     dataReq.input('pageSize', sql.Int, pageSize);
 
+    // Find date filter col for ORDER BY fallback
+    const source2 = source;
+    const mainTable = source2.tables.find(t => t.columns.length > 0);
+    const dateCol = mainTable?.columns.find(c => c.dateFilter)?.name;
+    const tableAlias = mainTable?.alias ?? 'm';
+    const sortDirRaw = body.sortDirection;
+    const sortDir =
+      sortDirRaw === 'asc' ? 'ASC' : sortDirRaw === 'desc' ? 'DESC' : null;
+    const sortCol =
+      sortDir && body.sortColumn ? safeDetailSortColumn(body.sortColumn, cols, sourceId) : null;
+    const orderBy =
+      sortCol && sortDir
+        ? `ORDER BY [${sortCol}] ${sortDir}`
+        : dateCol
+          ? `ORDER BY ${tableAlias}.[${dateCol}] DESC`
+          : `ORDER BY ${tableAlias}.[ID] DESC`;
+
     const dataResult = await queryWithTimeout(dataReq,
       `SELECT ${select}
-       FROM [dbo].[Журнал_ОСАГО_Маржа] m
+       FROM ${tableRef}
        ${joins}
        ${where}
-       ORDER BY m.[ДатаЗаключения] DESC
+       ${orderBy}
        OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY`,
       TIMEOUT.REPORT,
     );

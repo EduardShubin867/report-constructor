@@ -4,10 +4,25 @@ export type ColumnType = 'number' | 'string' | 'date' | 'bit';
 export interface ColumnSchema {
   name: string;
   type: ColumnType;
+  /** Human-readable label override for UI (defaults to column name if omitted) */
+  label?: string;
   /** If true, this column can be queried via list_column_values skill */
   filterable?: boolean;
   /** If true, column is excluded from AI prompts and manual report UI/queries */
   hidden?: boolean;
+  /** If true, column is available as a GROUP BY dimension in manual report */
+  groupable?: boolean;
+  /** If true, this date column is used as the date-range filter in manual report (max 1 per table) */
+  dateFilter?: boolean;
+}
+
+export interface ForeignKeyFilterConfig {
+  /** Field in the target table used for display and filtering, e.g. 'Наименование' */
+  displayField: string;
+  /** Label shown in the manual report filter UI, e.g. 'ДГ' */
+  label: string;
+  /** Optional extra WHERE clause on the target table, e.g. 'ПометкаУдаления = 0' */
+  targetWhere?: string;
 }
 
 export interface ForeignKey {
@@ -23,6 +38,8 @@ export interface ForeignKey {
   targetFields: string[];
   /** Ready-to-use JOIN SQL, e.g. 'LEFT JOIN [dbo].[ДГ] AS dg ON m.ID_ДГ = dg.Код' */
   joinSql: string;
+  /** If set, this FK generates a filter control in the manual report */
+  filterConfig?: ForeignKeyFilterConfig;
 }
 
 export interface TableSchema {
@@ -89,6 +106,8 @@ export interface DataSource {
    * E.g. "Используй для вопросов по ОСАГО, страховой марже и убыточности".
    */
   whenToUse?: string;
+  /** If true, this source is available in the manual report UI */
+  manualReport?: boolean;
 }
 
 /** Text-only instruction: repo `.md` or admin `data/skills.json`. */

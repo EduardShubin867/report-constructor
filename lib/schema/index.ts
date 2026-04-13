@@ -32,6 +32,11 @@ export function getAllowedTables(): Set<string> {
   return new Set(getDataSources().flatMap(ds => ds.tables.map(t => t.name)));
 }
 
+/** Sources marked as available in the manual report UI */
+export function getManualReportSources(): DataSource[] {
+  return getDataSources().filter(s => s.manualReport === true);
+}
+
 /** Filterable column names across all sources — for list_column_values skill */
 export function getFilterableColumns(): Set<string> {
   return new Set(
