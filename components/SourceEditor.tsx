@@ -297,25 +297,59 @@ export default function SourceEditor({ connections, initial, onSaved }: Props) {
     });
   }
 
-  function toggleFkFilter(tableIdx: number, fkIdx: number) {
-    const key = `${tableIdx}-${fkIdx}`;
-    const isOpen = fkFilterOpen[key];
-    setFkFilterOpen(prev => ({ ...prev, [key]: !isOpen }));
-    // When closing, clear filterConfig
-    if (isOpen) {
-      setSource(s => {
-        if (!s) return s;
-        const tables = s.tables.map((t, ti) => {
-          if (ti !== tableIdx) return t;
-          const foreignKeys = (t.foreignKeys ?? []).map((fk, fi) => {
-            if (fi !== fkIdx) return fk;
-            return { ...fk, filterConfig: undefined };
-          });
-          return { ...t, foreignKeys };
-        });
-        return { ...s, tables };
+  function fkPanelKey(tableIdx: number, fkIdx: number) {
+    return `${tableIdx}-${fkIdx}`;
+  }
+
+  /** Только раскрытие панели — настройки не трогаем. */
+  function setFkFilterPanelOpen(tableIdx: number, fkIdx: number, open: boolean) {
+    const key = fkPanelKey(tableIdx, fkIdx);
+    setFkFilterOpen(prev => ({ ...prev, [key]: open }));
+  }
+
+  /** Первый шаг: включить фильтр и открыть форму (разумные значения по умолчанию). */
+  function addFkFilter(tableIdx: number, fkIdx: number) {
+    if (!source) return;
+    const t = source.tables[tableIdx];
+    const fk = t?.foreignKeys?.[fkIdx];
+    if (!fk) return;
+    const guessDisplay =
+      fk.targetFields.find(f => /наименован|названи|имя/i.test(f)) ?? fk.targetFields[0] ?? '';
+    const guessLabel = fk.alias.length <= 6 ? fk.alias.toUpperCase() : fk.targetTable;
+    setSource(s => {
+      if (!s) return s;
+      const tables = s.tables.map((tb, ti) => {
+        if (ti !== tableIdx) return tb;
+        const foreignKeys = (tb.foreignKeys ?? []).map((f, fi) =>
+          fi === fkIdx
+            ? {
+                ...f,
+                filterConfig: { displayField: guessDisplay, label: guessLabel },
+                filterTier: f.filterTier ?? 'primary',
+              }
+            : f,
+        );
+        return { ...tb, foreignKeys };
       });
-    }
+      return { ...s, tables };
+    });
+    setFkFilterOpen(prev => ({ ...prev, [fkPanelKey(tableIdx, fkIdx)]: true }));
+  }
+
+  /** Удалить фильтр из ручного отчёта и закрыть панель. */
+  function removeFkFilter(tableIdx: number, fkIdx: number) {
+    setFkFilterPanelOpen(tableIdx, fkIdx, false);
+    setSource(s => {
+      if (!s) return s;
+      const tables = s.tables.map((t, ti) => {
+        if (ti !== tableIdx) return t;
+        const foreignKeys = (t.foreignKeys ?? []).map((fk, fi) =>
+          fi === fkIdx ? { ...fk, filterConfig: undefined, filterTier: undefined } : fk,
+        );
+        return { ...t, foreignKeys };
+      });
+      return { ...s, tables };
+    });
   }
 
   function setFkFilterConfig(tableIdx: number, fkIdx: number, config: Partial<ForeignKeyFilterConfig>) {
@@ -757,93 +791,182 @@ export default function SourceEditor({ connections, initial, onSaved }: Props) {
                 </div>
 
                 {mainTable.foreignKeys && mainTable.foreignKeys.length > 0 && (
-                  <div className="mt-3">
-                    <h4 className="text-xs text-zinc-500 mb-1.5">Внешние ключи</h4>
-                    <div className="space-y-2">
+                  <div className="mt-4 rounded-xl border border-zinc-700/80 bg-zinc-900/20 p-3">
+                    <h4 className="text-sm font-semibold text-zinc-200">Внешние ключи (JOIN к справочникам)</h4>
+                    <p className="mt-1 text-xs leading-relaxed text-zinc-500">
+                      Связь колонки журнала со справочной таблицей. По желанию можно добавить{' '}
+                      <span className="text-zinc-400">фильтр в ручном отчёте</span>: тогда в отчёте появится
+                      мультиселект по значениям из справочника (как по полю в журнале).
+                    </p>
+                    <div className="mt-3 space-y-3">
                       {mainTable.foreignKeys.map((fk: ForeignKey, fkIdx: number) => {
                         const ti = source.tables.indexOf(mainTable);
-                        const key = `${ti}-${fkIdx}`;
-                        const isOpen = !!fkFilterOpen[key];
+                        const panelKey = fkPanelKey(ti, fkIdx);
+                        const isOpen = !!fkFilterOpen[panelKey];
                         const cfg = fk.filterConfig;
+                        const hasFilter = !!cfg;
                         return (
-                          <div key={fk.column} className="border border-zinc-700 rounded-lg overflow-hidden">
-                            <div className="bg-zinc-800/50 px-3 py-1.5 flex flex-wrap items-center gap-2">
-                              <span className="text-xs font-mono text-zinc-300 flex-1 min-w-0">
-                                {fk.column} → [{source.schema}].[{fk.targetTable}].{fk.targetColumn}
-                                <span className="text-zinc-500 ml-2">alias: {fk.alias}</span>
-                              </span>
-                              {cfg && (
-                                <div className="flex items-center gap-0.5 text-[10px]">
-                                  <span className="text-zinc-500">фильтр:</span>
+                          <div
+                            key={`${fk.column}-${fk.alias}-${fkIdx}`}
+                            className="overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900/40"
+                          >
+                            <div className="border-b border-zinc-800 bg-zinc-800/40 px-3 py-2">
+                              <div className="flex flex-wrap items-start justify-between gap-2">
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-xs font-medium text-zinc-200">
+                                    Справочник{' '}
+                                    <span className="font-mono text-emerald-400/90">[{source.schema}].[{fk.targetTable}]</span>
+                                  </p>
+                                  <p className="mt-1 font-mono text-[11px] leading-snug text-zinc-400">
+                                    <span className="text-zinc-500">В журнале:</span> [{fk.column}]{' '}
+                                    <span className="text-zinc-600">→</span> ключ справочника [{fk.targetColumn}]
+                                    <span className="text-zinc-600"> · </span>
+                                    <span className="text-zinc-500">псевдоним JOIN:</span>{' '}
+                                    <span className="text-amber-400/90">{fk.alias}</span>
+                                  </p>
+                                </div>
+                                {hasFilter ? (
+                                  <span className="shrink-0 rounded-md border border-emerald-800/60 bg-emerald-950/50 px-2 py-0.5 text-[10px] font-medium text-emerald-300">
+                                    фильтр в отчёте
+                                  </span>
+                                ) : (
+                                  <span className="shrink-0 rounded-md border border-zinc-700 bg-zinc-800/80 px-2 py-0.5 text-[10px] text-zinc-500">
+                                    только JOIN
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="px-3 py-2.5">
+                              {!hasFilter ? (
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                  <p className="text-xs text-zinc-500">
+                                    Добавьте фильтр, если нужен выпадающий список по этому справочнику в ручном отчёте.
+                                  </p>
                                   <button
                                     type="button"
-                                    title="Основной"
-                                    onClick={() => setFkFilterTier(ti, fkIdx, 'primary')}
-                                    className={`rounded px-1 py-0.5 font-medium ${
-                                      (fk.filterTier ?? 'primary') === 'primary'
-                                        ? 'bg-emerald-600 text-white'
-                                        : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'
-                                    }`}
+                                    onClick={() => addFkFilter(ti, fkIdx)}
+                                    className="shrink-0 rounded-lg border border-emerald-700/50 bg-emerald-950/40 px-3 py-1.5 text-xs font-medium text-emerald-200 transition-colors hover:bg-emerald-950/70"
                                   >
-                                    О
-                                  </button>
-                                  <button
-                                    type="button"
-                                    title="Дополнительный"
-                                    onClick={() => setFkFilterTier(ti, fkIdx, 'secondary')}
-                                    className={`rounded px-1 py-0.5 font-medium ${
-                                      fk.filterTier === 'secondary'
-                                        ? 'bg-teal-700 text-white'
-                                        : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'
-                                    }`}
-                                  >
-                                    Д
+                                    Добавить фильтр…
                                   </button>
                                 </div>
+                              ) : (
+                                <>
+                                  <div className="flex flex-col gap-2 border-b border-zinc-800/80 pb-2.5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+                                    <div className="text-xs text-zinc-400">
+                                      <span className="text-zinc-500">Подпись в отчёте:</span>{' '}
+                                      <span className="font-medium text-zinc-200">{cfg.label || '—'}</span>
+                                      <span className="mx-1.5 text-zinc-600">·</span>
+                                      <span className="text-zinc-500">поле списка:</span>{' '}
+                                      <span className="font-mono text-zinc-300">{cfg.displayField || '—'}</span>
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <span className="text-[10px] uppercase tracking-wide text-zinc-500">
+                                        Загрузка списка
+                                      </span>
+                                      <div className="flex rounded-lg border border-zinc-600 p-0.5">
+                                        <button
+                                          type="button"
+                                          title="Сразу при открытии страницы отчёта"
+                                          onClick={() => setFkFilterTier(ti, fkIdx, 'primary')}
+                                          className={`rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${
+                                            (fk.filterTier ?? 'primary') === 'primary'
+                                              ? 'bg-emerald-600 text-white'
+                                              : 'text-zinc-400 hover:text-zinc-200'
+                                          }`}
+                                        >
+                                          Сразу
+                                        </button>
+                                        <button
+                                          type="button"
+                                          title="При первом открытии этого фильтра"
+                                          onClick={() => setFkFilterTier(ti, fkIdx, 'secondary')}
+                                          className={`rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${
+                                            fk.filterTier === 'secondary'
+                                              ? 'bg-teal-700 text-white'
+                                              : 'text-zinc-400 hover:text-zinc-200'
+                                          }`}
+                                        >
+                                          По клику
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="mt-2 flex flex-wrap gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => setFkFilterPanelOpen(ti, fkIdx, !isOpen)}
+                                      className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                                        isOpen
+                                          ? 'border-amber-600/70 bg-amber-950/40 text-amber-200'
+                                          : 'border-zinc-600 bg-zinc-800 text-zinc-300 hover:border-zinc-500'
+                                      }`}
+                                    >
+                                      {isOpen ? 'Свернуть настройки' : 'Изменить поля'}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => removeFkFilter(ti, fkIdx)}
+                                      className="rounded-lg border border-red-900/50 bg-red-950/30 px-3 py-1.5 text-xs font-medium text-red-300/90 transition-colors hover:bg-red-950/50"
+                                    >
+                                      Убрать фильтр
+                                    </button>
+                                  </div>
+
+                                  {isOpen && (
+                                    <div className="mt-3 space-y-3 rounded-lg border border-zinc-700/60 bg-zinc-950/50 p-3">
+                                      <p className="text-[11px] text-zinc-500">
+                                        Поле списка — колонка справочника, из которой берутся подписи в фильтре (часто
+                                        «Наименование»). Условие WHERE — опционально, накладывается на справочник.
+                                      </p>
+                                      <div className="flex flex-wrap gap-3">
+                                        <label className="flex min-w-[140px] flex-1 flex-col gap-1">
+                                          <span className="text-xs font-medium text-zinc-400">
+                                            Подпись у фильтра в отчёте
+                                          </span>
+                                          <input
+                                            className="rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-xs text-zinc-100 focus:border-zinc-500 focus:outline-none"
+                                            placeholder="Например: ДГ"
+                                            value={cfg.label}
+                                            onChange={e => setFkFilterConfig(ti, fkIdx, { label: e.target.value })}
+                                          />
+                                        </label>
+                                        <label className="flex min-w-[140px] flex-1 flex-col gap-1">
+                                          <span className="text-xs font-medium text-zinc-400">
+                                            Поле справочника для списка значений
+                                          </span>
+                                          <input
+                                            className="rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1.5 font-mono text-xs text-zinc-100 focus:border-zinc-500 focus:outline-none"
+                                            placeholder="Наименование"
+                                            value={cfg.displayField}
+                                            onChange={e =>
+                                              setFkFilterConfig(ti, fkIdx, { displayField: e.target.value })
+                                            }
+                                          />
+                                        </label>
+                                        <label className="flex min-w-[180px] flex-[2] flex-col gap-1">
+                                          <span className="text-xs font-medium text-zinc-400">
+                                            Доп. условие к справочнику (SQL WHERE)
+                                          </span>
+                                          <input
+                                            className="rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1.5 font-mono text-xs text-zinc-100 focus:border-zinc-500 focus:outline-none"
+                                            placeholder="ПометкаУдаления = 0"
+                                            value={cfg.targetWhere ?? ''}
+                                            onChange={e =>
+                                              setFkFilterConfig(ti, fkIdx, {
+                                                targetWhere: e.target.value || undefined,
+                                              })
+                                            }
+                                          />
+                                        </label>
+                                      </div>
+                                    </div>
+                                  )}
+                                </>
                               )}
-                              <button
-                                type="button"
-                                onClick={() => toggleFkFilter(ti, fkIdx)}
-                                className={`px-2 py-0.5 rounded border text-xs transition-colors ${
-                                  isOpen
-                                    ? 'border-amber-600 bg-amber-950/60 text-amber-300'
-                                    : 'border-zinc-600 bg-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500'
-                                }`}
-                              >
-                                Фильтр
-                              </button>
                             </div>
-                            {isOpen && (
-                              <div className="px-3 py-2 bg-zinc-900/60 border-t border-zinc-700 flex flex-wrap gap-2">
-                                <label className="flex flex-col gap-0.5 flex-1 min-w-[120px]">
-                                  <span className="text-[10px] text-zinc-500">displayField</span>
-                                  <input
-                                    className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-zinc-500 font-mono"
-                                    placeholder="Наименование"
-                                    value={cfg?.displayField ?? ''}
-                                    onChange={e => setFkFilterConfig(ti, fkIdx, { displayField: e.target.value })}
-                                  />
-                                </label>
-                                <label className="flex flex-col gap-0.5 flex-1 min-w-[100px]">
-                                  <span className="text-[10px] text-zinc-500">label</span>
-                                  <input
-                                    className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-zinc-500"
-                                    placeholder="ДГ"
-                                    value={cfg?.label ?? ''}
-                                    onChange={e => setFkFilterConfig(ti, fkIdx, { label: e.target.value })}
-                                  />
-                                </label>
-                                <label className="flex flex-col gap-0.5 flex-1 min-w-[160px]">
-                                  <span className="text-[10px] text-zinc-500">targetWhere (опционально)</span>
-                                  <input
-                                    className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-zinc-500 font-mono"
-                                    placeholder="ПометкаУдаления = 0"
-                                    value={cfg?.targetWhere ?? ''}
-                                    onChange={e => setFkFilterConfig(ti, fkIdx, { targetWhere: e.target.value || undefined })}
-                                  />
-                                </label>
-                              </div>
-                            )}
                           </div>
                         );
                       })}
