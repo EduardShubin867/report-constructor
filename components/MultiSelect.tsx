@@ -17,6 +17,8 @@ interface MultiSelectProps {
   placeholder?: string;
   label?: string;
   loading?: boolean;
+  /** Вызывается при раскрытии (true) и закрытии (false) списка. */
+  onOpenChange?: (open: boolean) => void;
 }
 
 const ROW_HEIGHT = 36;
@@ -29,6 +31,7 @@ export default function MultiSelect({
   placeholder = 'Все',
   label,
   loading,
+  onOpenChange,
 }: MultiSelectProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -97,7 +100,14 @@ export default function MultiSelect({
       {label && <label className="mb-1 block text-sm font-medium text-on-surface">{label}</label>}
       <button
         type="button"
-        onClick={() => !loading && setOpen(o => !o)}
+        onClick={() => {
+          if (loading) return;
+          setOpen(prev => {
+            const next = !prev;
+            onOpenChange?.(next);
+            return next;
+          });
+        }}
         disabled={loading}
         className={`ui-field flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm focus:outline-none ${
           loading

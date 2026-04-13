@@ -12,6 +12,9 @@ interface Props {
   dateTo: string;
   loading: boolean;
   filtersLoading?: boolean;
+  /** Подгрузка опций для secondary-фильтра при первом открытии дропдауна */
+  onLazyFilterOpen?: (key: string) => void;
+  lazyFilterLoading?: Record<string, boolean>;
   onFiltersChange: (v: Record<string, string[]>) => void;
   onDateChange: (from: string, to: string) => void;
   onSubmit: () => void;
@@ -26,6 +29,8 @@ export default function GenericReportFilters({
   dateTo,
   loading,
   filtersLoading,
+  onLazyFilterOpen,
+  lazyFilterLoading,
   onFiltersChange,
   onDateChange,
   onSubmit,
@@ -69,7 +74,13 @@ export default function GenericReportFilters({
             value={values[fd.key] ?? []}
             onChange={v => onFiltersChange({ ...values, [fd.key]: v })}
             placeholder="Все"
-            loading={filtersLoading}
+            loading={
+              Boolean(filtersLoading && (fd.tier ?? 'primary') === 'primary') ||
+              Boolean(lazyFilterLoading?.[fd.key])
+            }
+            onOpenChange={open => {
+              if (open && (fd.tier ?? 'primary') === 'secondary') onLazyFilterOpen?.(fd.key);
+            }}
           />
         ))}
 

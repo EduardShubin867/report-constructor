@@ -8,6 +8,7 @@
 
 import type { DataSource } from './types';
 import { loadDynamicSources } from './store';
+import { effectiveColumnFilterTier } from '@/lib/report-filter-tier';
 
 // ── In-memory cache ──────────────────────────────────────────────────────────
 
@@ -43,7 +44,7 @@ export function getFilterableColumns(): Set<string> {
     getDataSources()
       .flatMap(ds => ds.tables)
       .flatMap(t => t.columns)
-      .filter(c => c.filterable)
+      .filter(c => effectiveColumnFilterTier(c) != null)
       .map(c => c.name),
   );
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { FileSpreadsheet, FileText } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ColumnSelector from '@/components/ColumnSelector';
 import GroupBySelector from '@/components/GroupBySelector';
@@ -9,7 +9,7 @@ import GenericReportFilters from '@/components/GenericReportFilters';
 import ReportsChrome from '@/components/ReportsChrome';
 import UnifiedReportTable from '@/components/UnifiedReportTable';
 import { CONTRACT_COUNT_COLUMN_KEY, type ColumnDef } from '@/lib/report-columns';
-import type { ManualReportSourcePayload, SourceFilterOptions } from '@/lib/report-filters-data';
+import type { FilterDef, ManualReportSourcePayload, SourceFilterOptions } from '@/lib/report-filters-data';
 import { BASE_PATH } from '@/lib/constants';
 type ManualSortState = { col: string | null; dir: 'asc' | 'desc' | null };
 
@@ -54,6 +54,16 @@ function coerceBootstrapMap(
   return emptyBootstrapBySourceId;
 }
 
+function normalizeFilterOptions(fo: SourceFilterOptions): SourceFilterOptions {
+  return {
+    ...fo,
+    filterDefs: fo.filterDefs.map((fd: FilterDef & { tier?: 'primary' | 'secondary' }) => ({
+      ...fd,
+      tier: fd.tier ?? 'primary',
+    })),
+  };
+}
+
 export default function ManualReportRoute({
   initialSourceId = '',
   sources = [],
@@ -62,7 +72,9 @@ export default function ManualReportRoute({
   const bootstrapById = coerceBootstrapMap(initialBootstrapBySourceId);
   const boot0 = bootstrapById[initialSourceId] ?? emptyBootstrap;
   const [selectedSourceId, setSelectedSourceId] = useState(initialSourceId);
-  const [filterOptions, setFilterOptions] = useState<SourceFilterOptions>(boot0.filterOptions);
+  const [filterOptions, setFilterOptions] = useState<SourceFilterOptions>(() =>
+    normalizeFilterOptions(boot0.filterOptions),
+  );
   const [genericFilters, setGenericFilters] = useState<Record<string, string[]>>({});
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -79,6 +91,9 @@ export default function ManualReportRoute({
   const [hasSearched, setHasSearched] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(100);
+  const [lazyFilterOptions, setLazyFilterOptions] = useState<Record<string, string[]>>({});
+  const [lazyFilterLoading, setLazyFilterLoading] = useState<Record<string, boolean>>({});
+  const lazyFilterLoadedRef = useRef<Set<string>>(new Set());
 
   const isFirstSourceChange = useRef(true);
 
@@ -100,13 +115,13 @@ export default function ManualReportRoute({
     const p = bootstrapById[selectedSourceId];
     if (p) {
       setVisibleColumns(p.columns);
-      setFilterOptions(p.filterOptions);
+      setFilterOptions(normalizeFilterOptions(p.filterOptions));
       setSelectedColumns(prev => prev.filter(k => p.columns.some(c => c.key === k)));
       setFiltersLoading(p.filterError);
     } else {
       setFiltersLoading(true);
       setVisibleColumns([]);
-      setFilterOptions({ filterDefs: [], options: {}, dateFilterCol: null });
+      setFilterOptions(normalizeFilterOptions({ filterDefs: [], options: {}, dateFilterCol: null }));
       setSelectedColumns([]);
     }
   }, [selectedSourceId, bootstrapById]);
@@ -120,7 +135,7 @@ export default function ManualReportRoute({
     if (boot && !boot.filterError && boot.columns.length > 0) {
       // Props may arrive after the first client paint (streaming); keep state in sync without waiting on fetch.
       setVisibleColumns(boot.columns);
-      setFilterOptions(boot.filterOptions);
+      setFilterOptions(normalizeFilterOptions(boot.filterOptions));
       setFiltersLoading(false);
       setSelectedColumns(prev => prev.filter(k => boot.columns.some(c => c.key === k)));
       return;
@@ -141,7 +156,7 @@ export default function ManualReportRoute({
     ])
       .then(([fo, co]) => {
         if (cancelled) return;
-        if (fo) setFilterOptions(fo as SourceFilterOptions);
+        if (fo) setFilterOptions(normalizeFilterOptions(fo as SourceFilterOptions));
         const cols = co as { columns: ColumnDef[] } | null;
         if (cols?.columns?.length) {
           setVisibleColumns(cols.columns);
@@ -157,6 +172,44 @@ export default function ManualReportRoute({
       cancelled = true;
     };
   }, [selectedSourceId, bootstrapById]);
+
+  useEffect(() => {
+    lazyFilterLoadedRef.current.clear();
+    setLazyFilterOptions({});
+    setLazyFilterLoading({});
+  }, [selectedSourceId, filterOptions.filterDefs.map(f => `${f.key}:${f.tier}`).join('|')]);
+
+  const mergedFilterOptions = useMemo(
+    () => ({ ...filterOptions.options, ...lazyFilterOptions }),
+    [filterOptions.options, lazyFilterOptions],
+  );
+
+  const onLazyFilterOpen = useCallback(
+    async (key: string) => {
+      const fd = filterOptions.filterDefs.find(f => f.key === key);
+      if (!fd || fd.tier !== 'secondary') return;
+      if (lazyFilterLoadedRef.current.has(key)) return;
+      lazyFilterLoadedRef.current.add(key);
+      setLazyFilterLoading(prev => ({ ...prev, [key]: true }));
+      try {
+        const r = await fetch(
+          `${BASE_PATH}/api/report/filter-options?sourceId=${encodeURIComponent(selectedSourceId)}&key=${encodeURIComponent(key)}`,
+        );
+        const data = (await r.json()) as { values?: string[] };
+        if (r.ok && Array.isArray(data.values)) {
+          const vals = data.values;
+          setLazyFilterOptions(prev => ({ ...prev, [key]: vals }));
+        } else {
+          lazyFilterLoadedRef.current.delete(key);
+        }
+      } catch {
+        lazyFilterLoadedRef.current.delete(key);
+      } finally {
+        setLazyFilterLoading(prev => ({ ...prev, [key]: false }));
+      }
+    },
+    [filterOptions.filterDefs, selectedSourceId],
+  );
 
   useEffect(() => {
     setManualSort({ col: null, dir: null });
@@ -303,9 +356,10 @@ export default function ManualReportRoute({
     }
   }
 
-  // All visible columns marked groupable — not limited to current selection.
-  // Picking a group-by column auto-adds it to the column selection.
-  const availableGroupByColumns = visibleColumns.filter(c => c.groupable === true);
+  // Измерения для GROUP BY: строки, даты и логические (числа — только как меры SUM).
+  const availableGroupByColumns = visibleColumns.filter(
+    c => c.type === 'string' || c.type === 'date' || c.type === 'boolean',
+  );
 
   // Table column definitions: in grouped mode show dimensions + measures + count
   const tableColumns = groupBy.length > 0
@@ -373,13 +427,15 @@ export default function ManualReportRoute({
 
           <GenericReportFilters
             filterDefs={filterOptions.filterDefs}
-            options={filterOptions.options}
+            options={mergedFilterOptions}
             values={genericFilters}
             dateFilterCol={filterOptions.dateFilterCol}
             dateFrom={dateFrom}
             dateTo={dateTo}
             loading={loading}
             filtersLoading={filtersLoading}
+            onLazyFilterOpen={onLazyFilterOpen}
+            lazyFilterLoading={lazyFilterLoading}
             onFiltersChange={setGenericFilters}
             onDateChange={(from, to) => { setDateFrom(from); setDateTo(to); }}
             onSubmit={handleSubmit}

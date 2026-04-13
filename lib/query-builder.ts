@@ -1,5 +1,6 @@
 import { sql } from './db';
 import { getVisibleColumnDefs, getVisibleColumnKeys, getSourceJoinDefs } from './visible-columns';
+import { effectiveColumnFilterTier } from './report-filter-tier';
 import { getDataSources } from './schema';
 import type { DataSource, TableSchema } from './schema/types';
 import { CONTRACT_COUNT_COLUMN_KEY } from './report-columns';
@@ -108,7 +109,9 @@ export function buildGenericWhere(
   const conditions: string[] = [];
 
   // Build lookup maps from schema
-  const filterableColNames = new Set(table.columns.filter(c => c.filterable).map(c => c.name));
+  const filterableColNames = new Set(
+    table.columns.filter(c => effectiveColumnFilterTier(c) != null).map(c => c.name),
+  );
   const fkByAlias = new Map((table.foreignKeys ?? []).map(fk => [fk.alias, fk]));
 
   let paramIdx = 0;

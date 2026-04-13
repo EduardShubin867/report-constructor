@@ -6,7 +6,11 @@ export interface ColumnSchema {
   type: ColumnType;
   /** Human-readable label override for UI (defaults to column name if omitted) */
   label?: string;
-  /** If true, this column can be queried via list_column_values skill */
+  /**
+   * Фильтр ручного отчёта (DISTINCT): primary — загрузка с страницей, secondary — при первом открытии дропдауна.
+   */
+  filterTier?: 'primary' | 'secondary';
+  /** @deprecated Используйте filterTier. При true без filterTier трактуется как primary. */
   filterable?: boolean;
   /** If true, column is excluded from AI prompts and manual report UI/queries */
   hidden?: boolean;
@@ -38,6 +42,8 @@ export interface ForeignKey {
   targetFields: string[];
   /** Ready-to-use JOIN SQL, e.g. 'LEFT JOIN [dbo].[ДГ] AS dg ON m.ID_ДГ = dg.Код' */
   joinSql: string;
+  /** Eager vs lazy загрузка опций фильтра (только при наличии filterConfig). По умолчанию primary. */
+  filterTier?: 'primary' | 'secondary';
   /** If set, this FK generates a filter control in the manual report */
   filterConfig?: ForeignKeyFilterConfig;
 }

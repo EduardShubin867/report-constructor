@@ -4,6 +4,7 @@ import { BASE_PATH } from '@/lib/constants';
 import { getPool, queryWithTimeout, TIMEOUT } from '@/lib/db';
 import type { ColumnDef } from '@/lib/report-columns';
 import type { DataSource, TableSchema } from '@/lib/schema/types';
+import { buildFilterDescriptors } from '@/lib/report-filter-tier';
 
 /** Next.js Data Cache TTL for DISTINCT filter-option SQL (seconds). */
 export const REPORT_FILTER_OPTIONS_REVALIDATE = 300;
@@ -21,6 +22,8 @@ export interface FilterDef {
   label: string;
   /** 'direct' = plain column IN filter; 'fk' = reference table lookup */
   type: 'direct' | 'fk';
+  /** primary — опции в bootstrap; secondary — подгрузка при открытии дропдауна */
+  tier: 'primary' | 'secondary';
 }
 
 export interface SourceFilterOptions {
@@ -42,43 +45,20 @@ async function loadSourceFilterOptionsUncached(sourceId: string): Promise<Source
   if (!table) return { filterDefs: [], options: {}, dateFilterCol: null };
 
   const pool = await getPool();
-  const schema = source.schema;
-  const tableName = `[${schema}].[${table.name}]`;
   const t = TIMEOUT.QUERY;
 
-  const filterDefs: FilterDef[] = [];
-  const queries: { key: string; sql: string }[] = [];
+  const descriptors = buildFilterDescriptors(source);
+  const filterDefs: FilterDef[] = descriptors.map(d => ({
+    key: d.key,
+    label: d.label,
+    type: d.type,
+    tier: d.tier,
+  }));
 
-  // Direct filters — filterable columns
-  for (const col of table.columns) {
-    if (!col.filterable || col.hidden) continue;
-    const label = col.label ?? col.name;
-    filterDefs.push({ key: col.name, label, type: 'direct' });
-    queries.push({
-      key: col.name,
-      sql: `SELECT DISTINCT [${col.name}] AS v FROM ${tableName} WHERE [${col.name}] IS NOT NULL ORDER BY [${col.name}]`,
-    });
-  }
+  const primaryQueries = descriptors.filter(d => d.tier === 'primary');
 
-  // FK filters — foreignKeys with filterConfig
-  for (const fk of table.foreignKeys ?? []) {
-    if (!fk.filterConfig) continue;
-    const { displayField, label, targetWhere } = fk.filterConfig;
-    const targetTableRef = `[${schema}].[${fk.targetTable}]`;
-    const whereClause = targetWhere ? ` WHERE ${targetWhere}` : '';
-    filterDefs.push({ key: fk.alias, label, type: 'fk' });
-    queries.push({
-      key: fk.alias,
-      sql: `SELECT DISTINCT [${displayField}] AS v FROM ${targetTableRef}${whereClause} ORDER BY [${displayField}]`,
-    });
-  }
-
-  // Date filter column
-  const dateFilterCol = table.columns.find(c => c.dateFilter)?.name ?? null;
-
-  // Execute all queries in parallel
   const results = await Promise.all(
-    queries.map(({ key, sql: querySql }) =>
+    primaryQueries.map(({ key, sql: querySql }) =>
       queryWithTimeout(pool.request(), querySql, t)
         .then(r => ({ key, values: r.recordset.map(row => String(row['v'])) }))
         .catch(() => ({ key, values: [] })),
@@ -89,8 +69,30 @@ async function loadSourceFilterOptionsUncached(sourceId: string): Promise<Source
   for (const { key, values } of results) {
     options[key] = values;
   }
+  for (const d of descriptors) {
+    if (d.tier === 'secondary' && options[d.key] === undefined) {
+      options[d.key] = [];
+    }
+  }
+
+  const dateFilterCol = table.columns.find(c => c.dateFilter)?.name ?? null;
 
   return { filterDefs, options, dateFilterCol };
+}
+
+/** Одна DISTINCT-выборка для ключа фильтра (для lazy-дропдаунов и повторной подгрузки). */
+export async function loadSingleFilterKeyValues(sourceId: string, key: string): Promise<string[]> {
+  const source = getDataSources().find(s => s.id === sourceId);
+  if (!source) return [];
+  const desc = buildFilterDescriptors(source).find(d => d.key === key);
+  if (!desc) return [];
+  const pool = await getPool();
+  try {
+    const r = await queryWithTimeout(pool.request(), desc.sql, TIMEOUT.QUERY);
+    return r.recordset.map(row => String(row['v']));
+  } catch {
+    return [];
+  }
 }
 
 const loadSourceFilterOptionsCached = unstable_cache(
@@ -105,8 +107,7 @@ const loadSourceFilterOptionsCached = unstable_cache(
 /**
  * Loads filter definitions and option values for a data source.
  *
- * - Direct filters: columns with filterable: true → SELECT DISTINCT [col] FROM [table]
- * - FK filters: foreignKeys with filterConfig → SELECT DISTINCT [displayField] FROM [targetTable] [WHERE targetWhere]
+ * - Direct / FK: см. filterTier — только primary выполняют DISTINCT при загрузке; secondary — пустой массив до `/api/report/filter-options`.
  * - dateFilterCol: name of the column with dateFilter: true (for date-range UI)
  *
  * Results are cached in the Next.js Data Cache per `sourceId` (see `REPORT_FILTER_OPTIONS_REVALIDATE`).
