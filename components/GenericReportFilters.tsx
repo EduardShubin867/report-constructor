@@ -1,9 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import MultiSelect from './MultiSelect';
 import type { FilterDef } from '@/lib/report-filters-data';
+
+const PRIMARY_FILTERS_LIMIT = 6;
 
 interface Props {
   filterDefs: FilterDef[];
@@ -12,14 +14,12 @@ interface Props {
   dateFilterCol: string | null;
   dateFrom: string;
   dateTo: string;
-  loading: boolean;
   filtersLoading?: boolean;
   /** Подгрузка опций для secondary-фильтра при первом открытии дропдауна */
   onLazyFilterOpen?: (key: string) => void;
   lazyFilterLoading?: Record<string, boolean>;
   onFiltersChange: (v: Record<string, string[]>) => void;
   onDateChange: (from: string, to: string) => void;
-  onSubmit: () => void;
 }
 
 export default function GenericReportFilters({
@@ -29,19 +29,30 @@ export default function GenericReportFilters({
   dateFilterCol,
   dateFrom,
   dateTo,
-  loading,
   filtersLoading,
   onLazyFilterOpen,
   lazyFilterLoading,
   onFiltersChange,
   onDateChange,
-  onSubmit,
 }: Props) {
-  const primaryDefs = filterDefs.filter(fd => (fd.tier ?? 'primary') === 'primary');
-  const secondaryDefs = filterDefs.filter(fd => fd.tier === 'secondary');
+  const explicitSecondaryDefs = filterDefs.filter(fd => fd.tier === 'secondary');
+  const explicitPrimaryDefs = filterDefs.filter(fd => (fd.tier ?? 'primary') === 'primary');
+  const primaryDefs = explicitSecondaryDefs.length > 0
+    ? explicitPrimaryDefs
+    : filterDefs.slice(0, PRIMARY_FILTERS_LIMIT);
+  const secondaryDefs = explicitSecondaryDefs.length > 0
+    ? explicitSecondaryDefs
+    : filterDefs.slice(primaryDefs.length);
   const showPrimaryBlock = primaryDefs.length > 0 || dateFilterCol !== null;
   const [secondaryExpanded, setSecondaryExpanded] = useState(false);
   const secondaryActiveCount = secondaryDefs.filter(fd => (values[fd.key]?.length ?? 0) > 0).length;
+  const activeLabels = useMemo(
+    () =>
+      filterDefs
+        .filter(fd => (values[fd.key]?.length ?? 0) > 0)
+        .map(fd => fd.label),
+    [filterDefs, values],
+  );
 
   const activeCount =
     filterDefs.filter(fd => (values[fd.key]?.length ?? 0) > 0).length +
@@ -53,47 +64,94 @@ export default function GenericReportFilters({
   }
 
   return (
-    <div className="ui-panel relative overflow-visible rounded-2xl">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-outline-variant/10 px-5 py-3">
-        <div className="flex items-center gap-2">
-          <h2 className="font-headline text-sm font-semibold text-on-surface">Фильтры</h2>
-          {activeCount > 0 && (
-            <span className="ui-chip-accent inline-flex h-6 min-w-[24px] items-center justify-center rounded-full px-1.5 text-[10px] font-semibold">
-              {activeCount}
+    <div className="ui-panel relative overflow-visible rounded-[28px]">
+      <div className="border-b border-outline-variant/10 px-5 py-5 sm:px-6">
+        <div className="max-w-2xl">
+          <div className="mb-3 flex flex-wrap gap-2">
+            <span className="ui-chip-accent inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]">
+              Фильтры
             </span>
-          )}
+            <span className="ui-chip inline-flex items-center rounded-full px-3 py-1 text-[11px] font-medium">
+              Списки открываются по запросу
+            </span>
+            {activeCount > 0 ? (
+              <span className="ui-chip inline-flex items-center rounded-full px-3 py-1 text-[11px] font-medium">
+                Выбрано: {activeCount}
+              </span>
+            ) : null}
+          </div>
+          <h2 className="font-headline text-xl font-semibold tracking-tight text-on-surface sm:text-2xl">
+            Сначала задайте отбор
+          </h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-on-surface-variant">
+            Оставьте только то, что действительно важно для вашего вопроса. Самые частые фильтры показаны сразу, остальные можно открыть ниже.
+          </p>
         </div>
-        {activeCount > 0 && (
-          <button type="button" onClick={handleReset}
-            className="ui-button-ghost rounded-lg px-2 py-1 text-xs">
-            Сбросить все
-          </button>
-        )}
+
+        {activeCount > 0 ? (
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {activeLabels.slice(0, 5).map(label => (
+              <span
+                key={label}
+                className="ui-chip-accent inline-flex items-center rounded-full px-3 py-1 text-xs font-medium"
+              >
+                {label}
+              </span>
+            ))}
+            {activeLabels.length > 5 ? (
+              <span className="ui-chip inline-flex items-center rounded-full px-3 py-1 text-xs font-medium">
+                +{activeLabels.length - 5}
+              </span>
+            ) : null}
+            {dateFrom || dateTo ? (
+              <span className="ui-chip-accent inline-flex items-center rounded-full px-3 py-1 text-xs font-medium">
+                Выбран период
+              </span>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
-      <div className="space-y-4 px-5 py-4">
+      <div className="space-y-5 px-5 py-5 sm:px-6">
         {showPrimaryBlock && (
-          <section className="rounded-xl border border-primary/15 bg-primary/5 p-4">
-            <h3 className="mb-3 font-headline text-xs font-semibold uppercase tracking-wide text-on-surface">
-              Основные фильтры
-            </h3>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <section className="rounded-[24px] border border-primary/15 bg-primary-fixed/35 p-4 sm:p-5">
+            <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary/75">
+                  С чего начать
+                </p>
+                <h3 className="mt-1 font-headline text-lg font-semibold text-on-surface">
+                  Самое важное
+                </h3>
+              </div>
+              <p className="max-w-md text-xs leading-5 text-on-surface-variant">
+                Здесь собраны первые фильтры, с которых обычно начинают настройку отчёта.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {primaryDefs.map(fd => (
-                <MultiSelect
+                <div
                   key={fd.key}
-                  label={fd.label}
-                  options={options[fd.key] ?? []}
-                  value={values[fd.key] ?? []}
-                  onChange={v => onFiltersChange({ ...values, [fd.key]: v })}
-                  placeholder="Все"
-                  loading={Boolean(filtersLoading) || Boolean(lazyFilterLoading?.[fd.key])}
-                />
+                  className="rounded-[20px] border border-white/55 bg-surface-container-lowest/78 p-3 shadow-[0_8px_20px_rgba(23,32,43,0.03)]"
+                >
+                  <MultiSelect
+                    label={fd.label}
+                    options={options[fd.key] ?? []}
+                    value={values[fd.key] ?? []}
+                    onChange={v => onFiltersChange({ ...values, [fd.key]: v })}
+                    placeholder="Все"
+                    loading={Boolean(filtersLoading) || Boolean(lazyFilterLoading?.[fd.key])}
+                    onOpenChange={open => {
+                      if (open) onLazyFilterOpen?.(fd.key);
+                    }}
+                  />
+                </div>
               ))}
 
               {dateFilterCol !== null && (
-                <div className="flex flex-col gap-1 lg:col-span-2">
-                  <label className="block text-sm font-medium text-on-surface">Период</label>
+                <div className="rounded-[20px] border border-white/55 bg-surface-container-lowest/78 p-3 shadow-[0_8px_20px_rgba(23,32,43,0.03)] xl:col-span-2">
+                  <label className="mb-1 block text-sm font-medium text-on-surface">Период</label>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-center">
                     <input
                       type="date"
@@ -116,20 +174,25 @@ export default function GenericReportFilters({
         )}
 
         {secondaryDefs.length > 0 && (
-          <section className="overflow-hidden rounded-xl border border-outline-variant/20 bg-surface-container-low/40">
+          <section className="overflow-hidden rounded-[24px] border border-outline-variant/18 bg-surface-container-low/55">
             <button
               type="button"
               onClick={() => setSecondaryExpanded(e => !e)}
-              className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-container-low/70"
+              className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left transition-colors hover:bg-surface-container-low/85 sm:px-5"
             >
               <div className="min-w-0">
-                <h3 className="font-headline text-xs font-semibold uppercase tracking-wide text-outline-variant">
-                  Дополнительные фильтры
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-on-surface-variant">
+                  Дополнительно
+                </p>
+                <h3 className="mt-1 font-headline text-lg font-semibold text-on-surface">
+                  Остальные фильтры
                 </h3>
-                <p className="mt-1 text-[11px] leading-snug text-outline-variant">
+                <p className="mt-1 text-[11px] leading-snug text-on-surface-variant sm:text-xs">
                   {secondaryExpanded
-                    ? 'Загружаются при первом открытии списка — чтобы не замедлять первую загрузку страницы.'
-                    : `${secondaryActiveCount > 0 ? `${secondaryActiveCount} активных · ` : ''}По умолчанию свёрнуто — нажмите, чтобы развернуть.`}
+                    ? 'Здесь можно точнее настроить выборку, если верхнего блока уже недостаточно.'
+                    : secondaryActiveCount > 0
+                      ? `Сейчас выбрано ${secondaryActiveCount} ${secondaryActiveCount === 1 ? 'дополнительный фильтр' : secondaryActiveCount < 5 ? 'дополнительных фильтра' : 'дополнительных фильтров'}.`
+                      : 'Если нужно, раскройте блок и добавьте более точные условия.'}
                 </p>
               </div>
               <ChevronDown
@@ -140,21 +203,25 @@ export default function GenericReportFilters({
               />
             </button>
             {secondaryExpanded && (
-              <div className="border-t border-outline-variant/15 px-4 pb-4 pt-3">
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="border-t border-outline-variant/15 px-4 pb-4 pt-3 sm:px-5 sm:pb-5">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                   {secondaryDefs.map(fd => (
-                    <MultiSelect
+                    <div
                       key={fd.key}
-                      label={fd.label}
-                      options={options[fd.key] ?? []}
-                      value={values[fd.key] ?? []}
-                      onChange={v => onFiltersChange({ ...values, [fd.key]: v })}
-                      placeholder="Все"
-                      loading={Boolean(lazyFilterLoading?.[fd.key])}
-                      onOpenChange={open => {
-                        if (open) onLazyFilterOpen?.(fd.key);
-                      }}
-                    />
+                      className="rounded-[20px] border border-outline-variant/10 bg-surface-container-lowest/82 p-3"
+                    >
+                      <MultiSelect
+                        label={fd.label}
+                        options={options[fd.key] ?? []}
+                        value={values[fd.key] ?? []}
+                        onChange={v => onFiltersChange({ ...values, [fd.key]: v })}
+                        placeholder="Все"
+                        loading={Boolean(filtersLoading) || Boolean(lazyFilterLoading?.[fd.key])}
+                        onOpenChange={open => {
+                          if (open) onLazyFilterOpen?.(fd.key);
+                        }}
+                      />
+                    </div>
                   ))}
                 </div>
               </div>
@@ -163,12 +230,23 @@ export default function GenericReportFilters({
         )}
       </div>
 
-      {/* Action bar */}
-      <div className="border-t border-outline-variant/10 px-5 py-3.5">
-        <button type="button" onClick={onSubmit} disabled={loading}
-          className="ui-button-primary rounded-xl px-5 py-2.5 text-sm font-semibold active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60">
-          {loading ? 'Загрузка…' : 'Сформировать отчёт'}
-        </button>
+      <div className="border-t border-outline-variant/10 bg-surface-container-low/40 px-5 py-4 sm:px-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs leading-5 text-on-surface-variant">
+            {activeCount > 0
+              ? `Сейчас выбрано ${activeCount} ${activeCount === 1 ? 'условие' : activeCount < 5 ? 'условия' : 'условий'}${dateFrom || dateTo ? ' и период' : ''}. Можно запускать отчёт.`
+              : 'Фильтры не обязательны, но с ними обычно проще сразу выйти на нужный срез.'}
+          </p>
+          {activeCount > 0 ? (
+            <button
+              type="button"
+              onClick={handleReset}
+              className="ui-button-ghost w-fit rounded-xl px-3 py-2 text-xs font-medium"
+            >
+              Сбросить фильтры
+            </button>
+          ) : null}
+        </div>
       </div>
     </div>
   );

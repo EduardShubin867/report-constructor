@@ -101,23 +101,21 @@ export default function MultiSelect({
       <button
         type="button"
         onClick={() => {
-          if (loading) return;
           setOpen(prev => {
             const next = !prev;
             onOpenChange?.(next);
             return next;
           });
         }}
-        disabled={loading}
         className={`ui-field flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm focus:outline-none ${
-          loading
+          loading && !open
             ? 'cursor-not-allowed border-outline-variant/10 bg-surface-container-low text-on-surface-variant/60'
             : open
               ? 'border-primary/30'
               : ''
         }`}
       >
-        {loading ? (
+        {loading && !open ? (
           <span className="flex items-center gap-2 text-on-surface-variant/70">
             <LoaderCircle className="h-3.5 w-3.5 animate-spin" strokeWidth={2.2} />
             Загрузка…
@@ -137,70 +135,79 @@ export default function MultiSelect({
 
       {open && (
         <div className="ui-panel absolute z-[80] mt-2 flex w-full flex-col overflow-hidden rounded-2xl">
-          <div className="border-b border-outline-variant/10 p-2">
-            <input
-              type="text"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Поиск..."
-              className="ui-field w-full rounded-xl px-3 py-2 text-sm focus:border-primary/30 focus:outline-none"
-              autoFocus
-            />
-          </div>
-          <div className="flex items-center justify-between gap-2 border-b border-outline-variant/10 px-2 py-2">
-            <div className="flex gap-2">
-              <button
-                type="button"
-                className="ui-button-ghost rounded-lg px-2 py-1 text-xs font-medium text-primary"
-                onClick={selectAllFiltered}
-              >
-                Все
-              </button>
-              <button
-                type="button"
-                className="ui-button-ghost rounded-lg px-2 py-1 text-xs"
-                onClick={() => onChange([])}
-              >
-                Сбросить
-              </button>
+          {loading ? (
+            <div className="flex items-center gap-2 px-3 py-4 text-sm text-on-surface-variant/70">
+              <LoaderCircle className="h-4 w-4 animate-spin" strokeWidth={2.2} />
+              Загрузка значений…
             </div>
-            <span className="text-[11px] text-on-surface-variant/70">
-              {filtered.length.toLocaleString('ru-RU')}
-            </span>
-          </div>
-          <div
-            ref={listRef}
-            className="overflow-y-auto"
-            style={{ maxHeight: VIEWPORT_MAX_HEIGHT }}
-          >
-            {filtered.length === 0 ? (
-              <div className="px-3 py-3 text-sm text-on-surface-variant/70">Ничего не найдено</div>
-            ) : (
-              <div style={{ height: totalSize, position: 'relative' }}>
-                {virtualItems.map(virtualRow => {
-                  const opt = filtered[virtualRow.index];
-                  const checked = selectedSet.has(opt);
-                  return (
-                    <label
-                      key={virtualRow.key}
-                      data-index={virtualRow.index}
-                      ref={rowVirtualizer.measureElement}
-                      className="absolute left-0 top-0 flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-sm text-on-surface transition-colors hover:bg-surface-container-low/80"
-                      style={{ transform: `translateY(${virtualRow.start}px)` }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => toggle(opt)}
-                        className="shrink-0 accent-primary"
-                      />
-                      <span className="truncate">{opt}</span>
-                    </label>
-                  );
-                })}
+          ) : (
+            <>
+              <div className="border-b border-outline-variant/10 p-2">
+                <input
+                  type="text"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Поиск..."
+                  className="ui-field w-full rounded-xl px-3 py-2 text-sm focus:border-primary/30 focus:outline-none"
+                  autoFocus
+                />
               </div>
-            )}
-          </div>
+              <div className="flex items-center justify-between gap-2 border-b border-outline-variant/10 px-2 py-2">
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="ui-button-ghost rounded-lg px-2 py-1 text-xs font-medium text-primary"
+                    onClick={selectAllFiltered}
+                  >
+                    Все
+                  </button>
+                  <button
+                    type="button"
+                    className="ui-button-ghost rounded-lg px-2 py-1 text-xs"
+                    onClick={() => onChange([])}
+                  >
+                    Сбросить
+                  </button>
+                </div>
+                <span className="text-[11px] text-on-surface-variant/70">
+                  {filtered.length.toLocaleString('ru-RU')}
+                </span>
+              </div>
+              <div
+                ref={listRef}
+                className="overflow-y-auto"
+                style={{ maxHeight: VIEWPORT_MAX_HEIGHT }}
+              >
+                {filtered.length === 0 ? (
+                  <div className="px-3 py-3 text-sm text-on-surface-variant/70">Ничего не найдено</div>
+                ) : (
+                  <div style={{ height: totalSize, position: 'relative' }}>
+                    {virtualItems.map(virtualRow => {
+                      const opt = filtered[virtualRow.index];
+                      const checked = selectedSet.has(opt);
+                      return (
+                        <label
+                          key={virtualRow.key}
+                          data-index={virtualRow.index}
+                          ref={rowVirtualizer.measureElement}
+                          className="absolute left-0 top-0 flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-sm text-on-surface transition-colors hover:bg-surface-container-low/80"
+                          style={{ transform: `translateY(${virtualRow.start}px)` }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggle(opt)}
+                            className="shrink-0 accent-primary"
+                          />
+                          <span className="truncate">{opt}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

@@ -6,12 +6,12 @@ import type { ColumnDef } from '@/lib/report-columns';
 import type { DataSource, TableSchema } from '@/lib/schema/types';
 import { buildFilterDescriptors } from '@/lib/report-filter-tier';
 
-/** Next.js Data Cache TTL for DISTINCT filter-option SQL (seconds). */
+/** Next.js Data Cache TTL for on-demand DISTINCT filter-value SQL (seconds). */
 export const REPORT_FILTER_OPTIONS_REVALIDATE = 300;
 
 /**
- * Pass to `revalidateTag()` to drop all cached `loadSourceFilterOptions` entries
- * (every `sourceId` shares this tag).
+ * Pass to `revalidateTag()` to drop all cached lazy filter-value entries.
+ * Every sourceId/key pair shares this tag for simple invalidation after schema edits.
  */
 export const REPORT_FILTER_OPTIONS_CACHE_TAG = 'manual-report-filter-options';
 
@@ -22,7 +22,7 @@ export interface FilterDef {
   label: string;
   /** 'direct' = plain column IN filter; 'fk' = reference table lookup */
   type: 'direct' | 'fk';
-  /** primary — опции в bootstrap; secondary — подгрузка при открытии дропдауна */
+  /** primary / secondary controls UI grouping; values are loaded lazily for both tiers */
   tier: 'primary' | 'secondary';
 }
 
@@ -37,15 +37,12 @@ function getMainTable(source: DataSource): TableSchema | null {
   return source.tables.find(t => t.columns.length > 0) ?? null;
 }
 
-async function loadSourceFilterOptionsUncached(sourceId: string): Promise<SourceFilterOptions> {
+function buildSourceFilterOptions(sourceId: string): SourceFilterOptions {
   const source = getDataSources().find(s => s.id === sourceId);
   if (!source) return { filterDefs: [], options: {}, dateFilterCol: null };
 
   const table = getMainTable(source);
   if (!table) return { filterDefs: [], options: {}, dateFilterCol: null };
-
-  const pool = await getPool();
-  const t = TIMEOUT.QUERY;
 
   const descriptors = buildFilterDescriptors(source);
   const filterDefs: FilterDef[] = descriptors.map(d => ({
@@ -55,33 +52,17 @@ async function loadSourceFilterOptionsUncached(sourceId: string): Promise<Source
     tier: d.tier,
   }));
 
-  const primaryQueries = descriptors.filter(d => d.tier === 'primary');
-
-  const results = await Promise.all(
-    primaryQueries.map(({ key, sql: querySql }) =>
-      queryWithTimeout(pool.request(), querySql, t)
-        .then(r => ({ key, values: r.recordset.map(row => String(row['v'])) }))
-        .catch(() => ({ key, values: [] })),
-    ),
+  const options: Record<string, string[]> = Object.fromEntries(
+    descriptors.map(d => [d.key, [] as string[]]),
   );
-
-  const options: Record<string, string[]> = {};
-  for (const { key, values } of results) {
-    options[key] = values;
-  }
-  for (const d of descriptors) {
-    if (d.tier === 'secondary' && options[d.key] === undefined) {
-      options[d.key] = [];
-    }
-  }
 
   const dateFilterCol = table.columns.find(c => c.dateFilter)?.name ?? null;
 
   return { filterDefs, options, dateFilterCol };
 }
 
-/** Одна DISTINCT-выборка для ключа фильтра (для lazy-дропдаунов и повторной подгрузки). */
-export async function loadSingleFilterKeyValues(sourceId: string, key: string): Promise<string[]> {
+/** Одна DISTINCT-выборка для ключа фильтра (для lazy-дропдаунов). */
+async function loadSingleFilterKeyValuesUncached(sourceId: string, key: string): Promise<string[]> {
   const source = getDataSources().find(s => s.id === sourceId);
   if (!source) return [];
   const desc = buildFilterDescriptors(source).find(d => d.key === key);
@@ -95,9 +76,9 @@ export async function loadSingleFilterKeyValues(sourceId: string, key: string): 
   }
 }
 
-const loadSourceFilterOptionsCached = unstable_cache(
-  async (sourceId: string) => loadSourceFilterOptionsUncached(sourceId),
-  ['loadSourceFilterOptions'],
+const loadSingleFilterKeyValuesCached = unstable_cache(
+  async (sourceId: string, key: string) => loadSingleFilterKeyValuesUncached(sourceId, key),
+  ['loadSingleFilterKeyValues'],
   {
     revalidate: REPORT_FILTER_OPTIONS_REVALIDATE,
     tags: [REPORT_FILTER_OPTIONS_CACHE_TAG],
@@ -107,18 +88,21 @@ const loadSourceFilterOptionsCached = unstable_cache(
 /**
  * Loads filter definitions and option values for a data source.
  *
- * - Direct / FK: см. filterTier — только primary выполняют DISTINCT при загрузке; secondary — пустой массив до `/api/report/filter-options`.
+ * - Direct / FK filter values are loaded lazily on dropdown open via `/api/report/filter-options`.
  * - dateFilterCol: name of the column with dateFilter: true (for date-range UI)
- *
- * Results are cached in the Next.js Data Cache per `sourceId` (see `REPORT_FILTER_OPTIONS_REVALIDATE`).
  */
 export async function loadSourceFilterOptions(sourceId: string): Promise<SourceFilterOptions> {
-  return loadSourceFilterOptionsCached(sourceId);
+  return buildSourceFilterOptions(sourceId);
+}
+
+/** Cached lazy values for one dropdown (`sourceId` + `key`). */
+export async function loadSingleFilterKeyValues(sourceId: string, key: string): Promise<string[]> {
+  return loadSingleFilterKeyValuesCached(sourceId, key);
 }
 
 /**
- * Вызывать после изменения источника в админке (колонки, filterable, FK-фильтры и т.д.),
- * чтобы сбросить Next Data Cache по DISTINCT-фильтрам и пересобрать RSC ручного отчёта.
+ * Вызывать после изменения источника в админке (колонки, фильтры, FK и т.д.),
+ * чтобы сбросить lazy-cache по DISTINCT-значениям и пересобрать страницу ручного отчёта.
  */
 export function revalidateManualReportCaches(): void {
   revalidateTag(REPORT_FILTER_OPTIONS_CACHE_TAG, { expire: 0 });
@@ -131,6 +115,4 @@ export type ManualReportSourcePayload = {
   /** Измерения для группировки (основная таблица + выбранные поля FK). */
   groupByColumns?: ColumnDef[];
   filterOptions: SourceFilterOptions;
-  /** True when `loadSourceFilterOptions` threw — UI may retry via `/api/report/filters`. */
-  filterError: boolean;
 };

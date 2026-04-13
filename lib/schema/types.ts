@@ -7,7 +7,8 @@ export interface ColumnSchema {
   /** Human-readable label override for UI (defaults to column name if omitted) */
   label?: string;
   /**
-   * Фильтр ручного отчёта (DISTINCT): primary — загрузка с страницей, secondary — при первом открытии дропдауна.
+   * Визуальный приоритет фильтра в ручном отчёте: primary / secondary.
+   * Значения обоих типов подгружаются лениво при открытии дропдауна.
    */
   filterTier?: 'primary' | 'secondary';
   /** @deprecated Используйте filterTier. При true без filterTier трактуется как primary. */
@@ -47,7 +48,7 @@ export interface ForeignKey {
   groupByFields?: string[];
   /** Ready-to-use JOIN SQL, e.g. 'LEFT JOIN [dbo].[ДГ] AS dg ON m.ID_ДГ = dg.Код' */
   joinSql: string;
-  /** Eager vs lazy загрузка опций фильтра (только при наличии filterConfig). По умолчанию primary. */
+  /** UI-priority фильтра (только при наличии filterConfig). По умолчанию primary. */
   filterTier?: 'primary' | 'secondary';
   /** If set, this FK generates a filter control in the manual report */
   filterConfig?: ForeignKeyFilterConfig;

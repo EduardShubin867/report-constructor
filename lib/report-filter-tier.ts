@@ -1,6 +1,6 @@
 import type { ColumnSchema, DataSource, ForeignKey } from '@/lib/schema/types';
 
-/** Участие колонки основной таблицы в фильтрах ручного отчёта (DISTINCT). */
+/** UI-tier фильтра колонки основной таблицы в ручном отчёте. */
 export function effectiveColumnFilterTier(col: ColumnSchema): 'primary' | 'secondary' | null {
   if (col.hidden) return null;
   if (col.filterTier === 'primary' || col.filterTier === 'secondary') return col.filterTier;
@@ -8,7 +8,7 @@ export function effectiveColumnFilterTier(col: ColumnSchema): 'primary' | 'secon
   return null;
 }
 
-/** FK-фильтр в ручном отчёте: primary — eager, secondary — lazy. */
+/** UI-tier FK-фильтра в ручном отчёте. */
 export function effectiveFkFilterTier(fk: ForeignKey): 'primary' | 'secondary' | null {
   if (!fk.filterConfig) return null;
   if (fk.filterTier === 'primary' || fk.filterTier === 'secondary') return fk.filterTier;
@@ -23,7 +23,7 @@ export interface BuiltFilterDescriptor {
   sql: string;
 }
 
-/** Все фильтры источника с SQL для DISTINCT (primary выполняется на сервере страницы, secondary — по запросу). */
+/** Все фильтры источника с SQL для DISTINCT; значения подгружаются по запросу. */
 export function buildFilterDescriptors(source: DataSource): BuiltFilterDescriptor[] {
   const table = source.tables.find(t => t.columns.length > 0);
   if (!table) return [];

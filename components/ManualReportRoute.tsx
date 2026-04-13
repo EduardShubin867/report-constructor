@@ -49,8 +49,8 @@ interface ManualReportRouteProps {
   initialSourceId?: string;
   sources?: { id: string; name: string }[];
   /**
-   * Per-source data from the server: visible columns (incl. groupable), filter defs + option lists.
-   * Switching the source dropdown uses this map — no extra round-trips unless `filterError` triggers a retry.
+   * Per-source data from the server: visible columns and filter metadata.
+   * Dropdown values themselves are loaded lazily on first open.
    * May be absent on the first client pass while the RSC payload is streaming.
    */
   initialBootstrapBySourceId?: Record<string, ManualReportSourcePayload> | null;
@@ -60,7 +60,6 @@ const emptyBootstrap: ManualReportSourcePayload = {
   columns: [],
   groupByColumns: [],
   filterOptions: { filterDefs: [], options: {}, dateFilterCol: null },
-  filterError: true,
 };
 
 /** Stable fallback when the prop is missing (RSC edge / stale client chunk). */
@@ -106,7 +105,7 @@ export default function ManualReportRoute({
   const [genericFilters, setGenericFilters] = useState<Record<string, string[]>>({});
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [filtersLoading, setFiltersLoading] = useState(boot0.filterError);
+  const [filtersLoading, setFiltersLoading] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState<ColumnDef[]>(boot0.columns);
   const [groupByColumns, setGroupByColumns] = useState<ColumnDef[]>(() =>
     mergeGroupByColumnsPayload(boot0),
@@ -126,7 +125,25 @@ export default function ManualReportRoute({
   const [pageSize, setPageSize] = useState(100);
   const [lazyFilterOptions, setLazyFilterOptions] = useState<Record<string, string[]>>({});
   const [lazyFilterLoading, setLazyFilterLoading] = useState<Record<string, boolean>>({});
+  const [showFloatingSubmit, setShowFloatingSubmit] = useState(false);
   const lazyFilterLoadedRef = useRef<Set<string>>(new Set());
+  const submitPanelRef = useRef<HTMLDivElement | null>(null);
+  const reportSectionRef = useRef<HTMLElement | null>(null);
+  const filterDefsSignature = useMemo(
+    () => filterOptions.filterDefs.map(f => `${f.key}:${f.tier}`).join('|'),
+    [filterOptions.filterDefs],
+  );
+  const selectedSource = useMemo(
+    () => sources.find(source => source.id === selectedSourceId) ?? null,
+    [sources, selectedSourceId],
+  );
+  const activeFilterCount = useMemo(
+    () =>
+      filterOptions.filterDefs.filter(fd => (genericFilters[fd.key]?.length ?? 0) > 0).length +
+      (dateFrom || dateTo ? 1 : 0),
+    [dateFrom, dateTo, filterOptions.filterDefs, genericFilters],
+  );
+  const canSubmitDraft = selectedColumns.length > 0 && !loading;
 
   const isFirstSourceChange = useRef(true);
 
@@ -152,7 +169,7 @@ export default function ManualReportRoute({
       setGroupByColumns(mergeGroupByColumnsPayload(p));
       setFilterOptions(normalizeFilterOptions(p.filterOptions));
       setSelectedColumns(prev => prev.filter(k => p.columns.some(c => c.key === k)));
-      setFiltersLoading(p.filterError);
+      setFiltersLoading(false);
     } else {
       setFiltersLoading(true);
       setVisibleColumns([]);
@@ -164,11 +181,11 @@ export default function ManualReportRoute({
 
   /**
    * Fill or repair filter/column metadata over HTTP when props lack a usable bundle
-   * (missing key, filter prefetch failed, or columns empty).
+   * (missing key or columns empty).
    */
   useEffect(() => {
     const boot = bootstrapById[selectedSourceId];
-    if (boot && !boot.filterError && boot.columns.length > 0) {
+    if (boot && boot.columns.length > 0) {
       // Props may arrive after the first client paint (streaming); keep state in sync without waiting on fetch.
       setVisibleColumns(boot.columns);
       setGroupByColumns(mergeGroupByColumnsPayload(boot));
@@ -180,7 +197,7 @@ export default function ManualReportRoute({
 
     let cancelled = false;
     setFiltersLoading(true);
-    const needFilters = !boot || boot.filterError;
+    const needFilters = !boot;
     const needCols = !boot || boot.columns.length === 0;
 
     void Promise.all([
@@ -219,7 +236,24 @@ export default function ManualReportRoute({
     lazyFilterLoadedRef.current.clear();
     setLazyFilterOptions({});
     setLazyFilterLoading({});
-  }, [selectedSourceId, filterOptions.filterDefs.map(f => `${f.key}:${f.tier}`).join('|')]);
+  }, [selectedSourceId, filterDefsSignature]);
+
+  useEffect(() => {
+    const syncFloatingButton = () => {
+      const node = submitPanelRef.current;
+      if (!node) return;
+      const rect = node.getBoundingClientRect();
+      setShowFloatingSubmit(rect.top > window.innerHeight);
+    };
+
+    syncFloatingButton();
+    window.addEventListener('scroll', syncFloatingButton, { passive: true });
+    window.addEventListener('resize', syncFloatingButton);
+    return () => {
+      window.removeEventListener('scroll', syncFloatingButton);
+      window.removeEventListener('resize', syncFloatingButton);
+    };
+  }, []);
 
   const mergedFilterOptions = useMemo(
     () => ({ ...filterOptions.options, ...lazyFilterOptions }),
@@ -272,8 +306,9 @@ export default function ManualReportRoute({
   const onLazyFilterOpen = useCallback(
     async (key: string) => {
       const fd = filterOptions.filterDefs.find(f => f.key === key);
-      if (!fd || fd.tier !== 'secondary') return;
+      if (!fd) return;
       if (lazyFilterLoadedRef.current.has(key)) return;
+      if (lazyFilterLoading[key]) return;
       lazyFilterLoadedRef.current.add(key);
       setLazyFilterLoading(prev => ({ ...prev, [key]: true }));
       try {
@@ -293,7 +328,7 @@ export default function ManualReportRoute({
         setLazyFilterLoading(prev => ({ ...prev, [key]: false }));
       }
     },
-    [filterOptions.filterDefs, selectedSourceId],
+    [filterOptions.filterDefs, lazyFilterLoading, selectedSourceId],
   );
 
   const fetchReport = useCallback(async (
@@ -383,10 +418,37 @@ export default function ManualReportRoute({
     [appliedSnapshot, hasSearched, pageSize, selectedSourceId, fetchReport],
   );
 
-  const handleSubmit = () => {
+  const handleSubmit = useCallback(() => {
     setPage(1);
     void fetchReport(1, pageSize, genericFilters, dateFrom, dateTo, selectedColumns, groupBy, selectedSourceId);
-  };
+  }, [
+    dateFrom,
+    dateTo,
+    fetchReport,
+    genericFilters,
+    groupBy,
+    pageSize,
+    selectedColumns,
+    selectedSourceId,
+  ]);
+
+  const scrollToReportSection = useCallback(() => {
+    const node = reportSectionRef.current;
+    if (!node) return;
+    const headerOffset = 92;
+    const top = node.getBoundingClientRect().top + window.scrollY - headerOffset;
+    window.scrollTo({
+      top: Math.max(top, 0),
+      behavior: 'smooth',
+    });
+  }, []);
+
+  const handleSubmitAndScroll = useCallback(() => {
+    if (!canSubmitDraft) return;
+    handleSubmit();
+    window.requestAnimationFrame(scrollToReportSection);
+    window.setTimeout(scrollToReportSection, 120);
+  }, [canSubmitDraft, handleSubmit, scrollToReportSection]);
 
   const handlePageChange = (nextPage: number) => {
     const snap = appliedSnapshot;
@@ -482,83 +544,173 @@ export default function ManualReportRoute({
       }}
       headerActions={headerActions}
     >
-      <motion.div {...fadeSlide} className="flex flex-col gap-5">
-        <header>
-          <h1 className="mb-2 font-headline text-3xl font-bold tracking-tight text-on-surface">
-            Ручной отчёт
-          </h1>
-          <p className="max-w-2xl leading-7 text-on-surface-variant">
-            Выберите фильтры и колонки — таблица сформируется по правилам ручного конструктора.
-          </p>
-        </header>
+      <motion.div {...fadeSlide} className="flex flex-col gap-6">
+        <AnimatePresence>
+          {showFloatingSubmit ? (
+            <motion.div
+              initial={{ opacity: 0, y: 18 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 18 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+              className="fixed bottom-4 right-4 z-40 sm:bottom-5 sm:right-5"
+            >
+              <button
+                type="button"
+                onClick={handleSubmitAndScroll}
+                disabled={!canSubmitDraft}
+                className="ui-button-primary flex min-w-[13.5rem] items-center justify-center rounded-2xl px-5 py-3 text-sm font-semibold shadow-[0_18px_40px_rgba(23,32,43,0.18)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loading ? 'Готовим…' : 'Построить отчёт'}
+              </button>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
 
-        <div className="flex flex-col gap-4">
-          {sources.length > 1 && (
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-on-surface-variant">Источник:</span>
+        <header className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <div className="mb-3 flex flex-wrap gap-2">
+              <span className="ui-chip-accent inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]">
+                Ручной отчёт
+              </span>
+              <span className="ui-chip inline-flex items-center rounded-full px-3 py-1 text-xs font-medium">
+                {selectedSource?.name ?? 'Источник не выбран'}
+              </span>
+              <span className="ui-chip inline-flex items-center rounded-full px-3 py-1 text-xs font-medium">
+                {activeFilterCount} фильтров выбрано
+              </span>
+              <span className="ui-chip inline-flex items-center rounded-full px-3 py-1 text-xs font-medium">
+                {selectedColumns.length} колонок
+              </span>
+              {groupBy.length > 0 ? (
+                <span className="ui-chip inline-flex items-center rounded-full px-3 py-1 text-xs font-medium">
+                  {groupBy.length} уровней группировки
+                </span>
+              ) : null}
+            </div>
+            <h1 className="font-headline text-3xl font-bold tracking-tight text-on-surface">
+              Соберите отчёт под свою задачу
+            </h1>
+            <p className="mt-2 max-w-3xl text-sm leading-7 text-on-surface-variant">
+              Задайте отбор, выберите колонки и при необходимости добавьте группировку. После запуска таблица ниже сохранит последний результат, даже если вы продолжите менять настройки.
+            </p>
+          </div>
+
+          {sources.length > 1 ? (
+            <label className="block min-w-[18rem]">
+              <span className="mb-2 block text-sm font-medium text-on-surface">Набор данных</span>
               <select
                 value={selectedSourceId}
                 onChange={e => setSelectedSourceId(e.target.value)}
-                className="ui-field rounded-xl px-3 py-2 text-sm"
+                className="ui-field w-full rounded-xl px-3 py-2.5 text-sm"
               >
                 {sources.map(s => (
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
               </select>
-            </div>
-          )}
+            </label>
+          ) : null}
+        </header>
 
-          <GenericReportFilters
-            filterDefs={filterOptions.filterDefs}
-            options={mergedFilterOptions}
-            values={genericFilters}
-            dateFilterCol={filterOptions.dateFilterCol}
-            dateFrom={dateFrom}
-            dateTo={dateTo}
-            loading={loading}
-            filtersLoading={filtersLoading}
-            onLazyFilterOpen={onLazyFilterOpen}
-            lazyFilterLoading={lazyFilterLoading}
-            onFiltersChange={setGenericFilters}
-            onDateChange={(from, to) => { setDateFrom(from); setDateTo(to); }}
-            onSubmit={handleSubmit}
-          />
-          <ColumnSelector
-            selected={selectedColumns}
-            onChange={(cols) => {
-              setSelectedColumns(cols);
-              setGroupBy(prev => prev.filter(k => cols.includes(k)));
-            }}
-            columns={visibleColumns}
-            groupByActive={groupBy.length > 0}
-            showContractCount={showContractCount}
-            onShowContractCountChange={v => {
-              setShowContractCount(v);
-              const snap = appliedSnapshot;
-              if (!hasSearched || !snap || snap.groupBy.length === 0) return;
-              const prevSort = snap.sort;
-              const nextSort =
-                !v && prevSort.col === CONTRACT_COUNT_COLUMN_KEY ? { col: null, dir: null } : prevSort;
-              setManualSort(nextSort);
-              setPage(1);
-              void fetchReport(1, pageSize, snap.filters, snap.dateFrom, snap.dateTo, snap.columns, snap.groupBy, selectedSourceId, {
-                includeContractCount: v,
-                sort: nextSort,
-              });
-            }}
-          />
-          <GroupBySelector
-            groupBy={groupBy}
-            onChange={(newGroupBy) => {
-              // Auto-add newly picked groupBy columns to column selection
-              setSelectedColumns(prev => {
-                const missing = newGroupBy.filter(k => !prev.includes(k));
-                return missing.length > 0 ? [...prev, ...missing] : prev;
-              });
-              setGroupBy(newGroupBy);
-            }}
-            availableColumns={groupByColumns}
-          />
+        <div className="grid gap-5 2xl:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)]">
+          <div className="flex flex-col gap-5">
+            <GenericReportFilters
+              filterDefs={filterOptions.filterDefs}
+              options={mergedFilterOptions}
+              values={genericFilters}
+              dateFilterCol={filterOptions.dateFilterCol}
+              dateFrom={dateFrom}
+              dateTo={dateTo}
+              filtersLoading={filtersLoading}
+              onLazyFilterOpen={onLazyFilterOpen}
+              lazyFilterLoading={lazyFilterLoading}
+              onFiltersChange={setGenericFilters}
+              onDateChange={(from, to) => { setDateFrom(from); setDateTo(to); }}
+            />
+          </div>
+
+          <aside className="flex flex-col gap-5 2xl:sticky 2xl:top-20 2xl:self-start">
+            <ColumnSelector
+              selected={selectedColumns}
+              onChange={(cols) => {
+                setSelectedColumns(cols);
+                setGroupBy(prev => prev.filter(k => cols.includes(k)));
+              }}
+              columns={visibleColumns}
+              groupByActive={groupBy.length > 0}
+              showContractCount={showContractCount}
+              onShowContractCountChange={v => {
+                setShowContractCount(v);
+                const snap = appliedSnapshot;
+                if (!hasSearched || !snap || snap.groupBy.length === 0) return;
+                const prevSort = snap.sort;
+                const nextSort =
+                  !v && prevSort.col === CONTRACT_COUNT_COLUMN_KEY ? { col: null, dir: null } : prevSort;
+                setManualSort(nextSort);
+                setPage(1);
+                void fetchReport(1, pageSize, snap.filters, snap.dateFrom, snap.dateTo, snap.columns, snap.groupBy, selectedSourceId, {
+                  includeContractCount: v,
+                  sort: nextSort,
+                });
+              }}
+            />
+            <GroupBySelector
+              groupBy={groupBy}
+              onChange={(newGroupBy) => {
+                // Auto-add newly picked groupBy columns to column selection
+                setSelectedColumns(prev => {
+                  const missing = newGroupBy.filter(k => !prev.includes(k));
+                  return missing.length > 0 ? [...prev, ...missing] : prev;
+                });
+                setGroupBy(newGroupBy);
+              }}
+              availableColumns={groupByColumns}
+            />
+          </aside>
+        </div>
+
+        <div
+          ref={submitPanelRef}
+          className="ui-panel rounded-[28px] border border-outline-variant/16 bg-surface-container-low/35 px-5 py-4 sm:px-6"
+        >
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <div className="mb-2 flex flex-wrap gap-2">
+                <span className="ui-chip-accent inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]">
+                  Запуск
+                </span>
+                <span className="ui-chip inline-flex items-center rounded-full px-3 py-1 text-xs font-medium">
+                  {selectedColumns.length} колонок
+                </span>
+                {activeFilterCount > 0 ? (
+                  <span className="ui-chip inline-flex items-center rounded-full px-3 py-1 text-xs font-medium">
+                    {activeFilterCount} фильтров
+                  </span>
+                ) : null}
+                {groupBy.length > 0 ? (
+                  <span className="ui-chip inline-flex items-center rounded-full px-3 py-1 text-xs font-medium">
+                    {groupBy.length} группировок
+                  </span>
+                ) : null}
+              </div>
+              <p className="text-sm text-on-surface">
+                {selectedColumns.length > 0
+                  ? 'Если всё выбрано как нужно, можно запускать отчёт.'
+                  : 'Сначала выберите хотя бы одну колонку, и затем можно запускать отчёт.'}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-on-surface-variant">
+                Кнопка вынесена сюда, чтобы подтверждение шло после всех настроек, а не посреди формы.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSubmitAndScroll}
+              disabled={!canSubmitDraft}
+              className="ui-button-primary w-full rounded-xl px-5 py-3 text-sm font-semibold active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 lg:w-auto"
+            >
+              {loading ? 'Готовим…' : 'Построить отчёт'}
+            </button>
+          </div>
         </div>
 
         <AnimatePresence>
@@ -569,35 +721,63 @@ export default function ManualReportRoute({
           ) : null}
         </AnimatePresence>
 
-        {hasSearched || loading ? (
-          <UnifiedReportTable
-            data={result?.data ?? []}
-            columns={tableColumns}
-            total={result?.total ?? 0}
-            page={page}
-            pageSize={pageSize}
-            loading={loading}
-            onPageChange={handlePageChange}
-            onPageSizeChange={handlePageSizeChange}
-            mode="server"
-            serverSortColumn={serverSortForTable.col}
-            serverSortDirection={serverSortForTable.dir}
-            onServerSortClick={handleServerSort}
-          />
-        ) : null}
+        <section ref={reportSectionRef} className="flex flex-col gap-4">
+          <div className="rounded-[28px] border border-outline-variant/16 bg-surface-container-low/35 px-5 py-4 sm:px-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="mb-2 flex flex-wrap gap-2">
+                  <span className="ui-chip-accent inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]">
+                    Таблица
+                  </span>
+                  <span className="ui-chip inline-flex items-center rounded-full px-3 py-1 text-xs font-medium">
+                    {selectedColumns.length > 0 ? `${selectedColumns.length} колонок в черновике` : 'Колонки ещё не выбраны'}
+                  </span>
+                  {groupBy.length > 0 ? (
+                    <span className="ui-chip inline-flex items-center rounded-full px-3 py-1 text-xs font-medium">
+                      Есть группировка
+                    </span>
+                  ) : null}
+                </div>
+                <h2 className="font-headline text-xl font-semibold tracking-tight text-on-surface">
+                  {hasSearched ? 'Последний запущенный отчёт' : 'Здесь появится результат'}
+                </h2>
+                <p className="mt-1 max-w-3xl text-sm leading-6 text-on-surface-variant">
+                  {hasSearched
+                    ? 'Пока вы меняете настройки выше, таблица остаётся на последнем запуске. Чтобы обновить её, просто нажмите кнопку ещё раз.'
+                    : 'Добавьте колонки, при необходимости сузьте выборку и нажмите «Построить отчёт». После этого здесь появится таблица с сортировкой, страницами и выгрузкой в Excel.'}
+                </p>
+              </div>
 
-        {!hasSearched && !loading ? (
-          <EmptyState
-            title="Настройте фильтры и нажмите «Сформировать отчёт»"
-            subtitle="Выберите агентов, регионы, даты и другие параметры"
-          />
-        ) : null}
-
-        {hasSearched && result ? (
-          <div className="flex justify-end pb-4 sm:hidden">
-            <ExportButton loading={exporting} onClick={handleExportManual} />
+              {hasSearched && result ? (
+                <div className="flex justify-start sm:hidden">
+                  <ExportButton loading={exporting} onClick={handleExportManual} />
+                </div>
+              ) : null}
+            </div>
           </div>
-        ) : null}
+
+          {hasSearched || loading ? (
+            <UnifiedReportTable
+              data={result?.data ?? []}
+              columns={tableColumns}
+              total={result?.total ?? 0}
+              page={page}
+              pageSize={pageSize}
+              loading={loading}
+              onPageChange={handlePageChange}
+              onPageSizeChange={handlePageSizeChange}
+              mode="server"
+              serverSortColumn={serverSortForTable.col}
+              serverSortDirection={serverSortForTable.dir}
+              onServerSortClick={handleServerSort}
+            />
+          ) : (
+            <EmptyState
+              title="Настройте отчёт и нажмите «Построить отчёт»"
+              subtitle="Выберите колонки, при желании задайте фильтры и группировку — после запуска здесь сразу появится таблица."
+            />
+          )}
+        </section>
       </motion.div>
     </ReportsChrome>
   );
@@ -629,11 +809,11 @@ function EmptyState({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <motion.div
       {...fadeSlide}
-      className="ui-panel-muted rounded-2xl border border-dashed border-outline-variant/30 p-8 text-left sm:p-10"
+      className="ui-panel-muted rounded-[28px] border border-dashed border-outline-variant/30 p-8 text-left sm:p-10"
     >
       <FileText className="mb-4 block h-10 w-10 text-on-surface-variant/40" strokeWidth={1.8} />
-      <p className="text-sm font-medium text-on-surface">{title}</p>
-      <p className="mt-2 text-xs text-on-surface-variant">{subtitle}</p>
+      <p className="text-lg font-semibold text-on-surface">{title}</p>
+      <p className="mt-2 max-w-xl text-sm leading-6 text-on-surface-variant">{subtitle}</p>
     </motion.div>
   );
 }

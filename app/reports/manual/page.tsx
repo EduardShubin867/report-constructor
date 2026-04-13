@@ -6,23 +6,11 @@ import { getVisibleColumnDefs, getGroupByColumnDefs } from '@/lib/visible-column
 
 export const metadata: Metadata = { title: 'Конструктор — Отчёты' };
 
-/** Не отдавать устаревший bootstrap из Full Route Cache после деплоя / смены схемы. */
-export const dynamic = 'force-dynamic';
-
 async function bootstrapManualSource(id: string): Promise<ManualReportSourcePayload> {
-  let filterOptions;
-  let filterError = false;
-  try {
-    filterOptions = await loadSourceFilterOptions(id);
-  } catch {
-    filterOptions = { filterDefs: [], options: {}, dateFilterCol: null };
-    filterError = true;
-  }
   return {
     columns: getVisibleColumnDefs(id),
     groupByColumns: getGroupByColumnDefs(id),
-    filterOptions,
-    filterError,
+    filterOptions: await loadSourceFilterOptions(id),
   };
 }
 

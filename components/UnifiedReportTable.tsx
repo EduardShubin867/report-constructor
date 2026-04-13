@@ -216,9 +216,9 @@ export default function UnifiedReportTable({
 
   if (showInitialSkeleton) {
     return (
-      <div className="ui-panel overflow-hidden rounded-2xl">
+      <div className="ui-panel overflow-hidden rounded-[28px]">
         <div className="animate-pulse">
-          <div className="h-10 border-b border-outline-variant/10 bg-surface-container-low" />
+          <div className="h-20 border-b border-outline-variant/10 bg-surface-container-low/70" />
           {Array.from({ length: 8 }).map((_, i) => (
             <div
               key={i}
@@ -236,12 +236,20 @@ export default function UnifiedReportTable({
 
   if (data.length === 0) {
     return (
-      <div className="ui-panel rounded-2xl p-12 text-center">
-        <p className="text-sm text-on-surface-variant">
-          {isServer
-            ? 'Нет данных по выбранным фильтрам'
-            : 'Запрос выполнен, но данных нет'}
-        </p>
+      <div className="ui-panel rounded-[28px] p-12 text-center">
+        <div className="mx-auto max-w-md">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-on-surface-variant">
+            Результат
+          </p>
+          <p className="mt-3 font-headline text-xl font-semibold text-on-surface">
+            {isServer
+              ? 'По этим условиям ничего не нашлось'
+              : 'В таблице пока нет данных'}
+          </p>
+          <p className="mt-2 text-sm leading-6 text-on-surface-variant">
+            Попробуйте убрать часть фильтров, изменить период или упростить группировку и набор колонок.
+          </p>
+        </div>
       </div>
     );
   }
@@ -252,26 +260,44 @@ export default function UnifiedReportTable({
   };
 
   return (
-    <div className="ui-panel overflow-hidden rounded-2xl">
-      <div className="flex items-center justify-between border-b border-outline-variant/10 bg-surface-container-low/45 px-4 py-2.5 text-sm">
-        <span className="text-on-surface-variant">
-          <strong className="text-on-surface">
-            {rowCount.toLocaleString('ru-RU')}
-          </strong>{' '}
-          {pluralRecords(rowCount)}
-          {totalPages > 1 && (
-            <span className="text-on-surface-variant/70">
-              {' '}
-              · стр. {currentPage}/{totalPages}
-            </span>
-          )}
-        </span>
-        <div className="flex items-center gap-3">
+    <div className="ui-panel overflow-hidden rounded-[28px]">
+      <div className="border-b border-outline-variant/10 bg-surface-container-low/45 px-5 py-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <span className="ui-chip-accent inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]">
+                Результат
+              </span>
+              <span className="ui-chip inline-flex items-center rounded-full px-3 py-1 text-xs font-medium">
+                {columns.length} {columns.length === 1 ? 'колонка' : columns.length < 5 ? 'колонки' : 'колонок'}
+              </span>
+              {totalPages > 1 ? (
+                <span className="ui-chip inline-flex items-center rounded-full px-3 py-1 text-xs font-medium">
+                  Страница {currentPage}/{totalPages}
+                </span>
+              ) : null}
+            </div>
+            <p className="text-sm text-on-surface-variant">
+              <strong className="text-lg font-semibold text-on-surface">
+              {rowCount.toLocaleString('ru-RU')}
+              </strong>{' '}
+              {pluralRecords(rowCount)}
+              {loading ? (
+                <span className="ml-2 text-on-surface-variant/70">· обновляем данные…</span>
+              ) : null}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
           {warnings?.map(w => (
-            <span key={w} className="text-xs text-tertiary">
+            <span
+              key={w}
+              className="rounded-full border border-tertiary/15 bg-tertiary-fixed/70 px-3 py-1 text-xs text-tertiary"
+            >
               {w}
             </span>
           ))}
+          </div>
         </div>
       </div>
 
@@ -285,7 +311,7 @@ export default function UnifiedReportTable({
             role="status"
             aria-live="polite"
           >
-            <span className="sr-only">Загрузка данных</span>
+            <span className="sr-only">Загружаем таблицу</span>
           </div>
         )}
         <div
@@ -363,7 +389,9 @@ export default function UnifiedReportTable({
                 ? data.map((row, i) => (
                     <tr
                       key={(row.ID as string) ?? i}
-                      className="transition-colors hover:bg-surface-container-low"
+                      className={`transition-colors hover:bg-primary-fixed/45 ${
+                        i % 2 === 0 ? 'bg-surface-container-lowest/82' : 'bg-surface-container-low/28'
+                      }`}
                     >
                       {columns.map(col => (
                         <td
@@ -382,7 +410,9 @@ export default function UnifiedReportTable({
                 : table.getRowModel().rows.map(row => (
                     <tr
                       key={row.id}
-                      className="transition-colors hover:bg-surface-container-low"
+                      className={`transition-colors hover:bg-primary-fixed/45 ${
+                        row.index % 2 === 0 ? 'bg-surface-container-lowest/82' : 'bg-surface-container-low/28'
+                      }`}
                     >
                       {row.getVisibleCells().map(cell => (
                         <td
@@ -419,7 +449,7 @@ export default function UnifiedReportTable({
       {totalPages > 1 && (
         <div className="flex items-center justify-end gap-4 border-t border-outline-variant/10 bg-surface-container-low px-4 py-2">
           <label className="flex items-center gap-1.5 text-xs text-on-surface-variant">
-            Строк:
+            На странице:
             <select
               value={isServer ? pageSize : table.getState().pagination.pageSize}
               onChange={e => {
