@@ -6,6 +6,7 @@
 import { NextRequest } from 'next/server';
 import { loadDynamicSources, saveDynamicSource, getConnection } from '@/lib/schema/store';
 import { invalidateSchemaCache } from '@/lib/schema';
+import { revalidateManualReportCaches } from '@/lib/report-filters-data';
 import type { DataSource } from '@/lib/schema/types';
 
 export const dynamic = 'force-dynamic';
@@ -35,6 +36,7 @@ export async function POST(request: NextRequest) {
 
   saveDynamicSource(source);
   invalidateSchemaCache();
+  revalidateManualReportCaches();
 
   return Response.json({ ok: true, id: source.id });
 }

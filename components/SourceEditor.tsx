@@ -180,6 +180,40 @@ export default function SourceEditor({ connections, initial, onSaved }: Props) {
     });
   }
 
+  /** Filterable для всех колонок, кроме дат (даты — отдельный диапазон в отчёте). */
+  function setAllFilterable(tableIdx: number, enable: boolean) {
+    if (!source) return;
+    setSource(s => {
+      if (!s) return s;
+      const tables = s.tables.map((t, ti) => {
+        if (ti !== tableIdx) return t;
+        const columns = t.columns.map(c => {
+          if (c.type === 'date') return c;
+          return enable ? { ...c, filterable: true } : { ...c, filterable: undefined };
+        });
+        return { ...t, columns };
+      });
+      return { ...s, tables };
+    });
+  }
+
+  /** Groupable для строковых колонок (даты не трогаем — только по одной вручную). */
+  function setAllGroupable(tableIdx: number, enable: boolean) {
+    if (!source) return;
+    setSource(s => {
+      if (!s) return s;
+      const tables = s.tables.map((t, ti) => {
+        if (ti !== tableIdx) return t;
+        const columns = t.columns.map(c => {
+          if (c.type !== 'string') return c;
+          return enable ? { ...c, groupable: true } : { ...c, groupable: undefined };
+        });
+        return { ...t, columns };
+      });
+      return { ...s, tables };
+    });
+  }
+
   function toggleGroupable(tableIdx: number, colIdx: number) {
     if (!source) return;
     setSource(s => {
@@ -508,8 +542,42 @@ export default function SourceEditor({ connections, initial, onSaved }: Props) {
                       <tr className="bg-zinc-800/60 text-zinc-400 text-xs">
                         <th className="text-left px-3 py-2 font-medium">Колонка</th>
                         <th className="text-left px-3 py-2 font-medium">Тип</th>
-                        <th className="text-center px-3 py-2 font-medium">Filterable</th>
-                        <th className="text-center px-3 py-2 font-medium">Groupable</th>
+                        <th className="text-center px-3 py-2 font-medium">
+                          <div className="flex flex-col items-center gap-0.5">
+                            <span>Filterable</span>
+                            <div className="flex gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setAllFilterable(source.tables.indexOf(mainTable), true)}
+                                className="text-[10px] text-zinc-400 hover:text-zinc-200 underline underline-offset-1"
+                              >все</button>
+                              <span className="text-zinc-600">/</span>
+                              <button
+                                type="button"
+                                onClick={() => setAllFilterable(source.tables.indexOf(mainTable), false)}
+                                className="text-[10px] text-zinc-400 hover:text-zinc-200 underline underline-offset-1"
+                              >снять</button>
+                            </div>
+                          </div>
+                        </th>
+                        <th className="text-center px-3 py-2 font-medium">
+                          <div className="flex flex-col items-center gap-0.5">
+                            <span>Groupable</span>
+                            <div className="flex gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setAllGroupable(source.tables.indexOf(mainTable), true)}
+                                className="text-[10px] text-zinc-400 hover:text-zinc-200 underline underline-offset-1"
+                              >все</button>
+                              <span className="text-zinc-600">/</span>
+                              <button
+                                type="button"
+                                onClick={() => setAllGroupable(source.tables.indexOf(mainTable), false)}
+                                className="text-[10px] text-zinc-400 hover:text-zinc-200 underline underline-offset-1"
+                              >снять</button>
+                            </div>
+                          </div>
+                        </th>
                         <th className="text-center px-3 py-2 font-medium">Дата</th>
                         <th className="text-center px-3 py-2 font-medium">
                           <div className="flex flex-col items-center gap-0.5">
@@ -559,6 +627,7 @@ export default function SourceEditor({ connections, initial, onSaved }: Props) {
                             <td className="px-3 py-1.5 text-center">
                               {canGroupable ? (
                                 <button
+                                  type="button"
                                   onClick={() => toggleGroupable(ti, ci)}
                                   className={`w-4 h-4 rounded border text-xs flex items-center justify-center mx-auto transition-colors ${
                                     col.groupable
@@ -569,12 +638,13 @@ export default function SourceEditor({ connections, initial, onSaved }: Props) {
                                   ✓
                                 </button>
                               ) : (
-                                <td />
+                                <span className="inline-block w-4 h-4 mx-auto text-zinc-700">·</span>
                               )}
                             </td>
                             <td className="px-3 py-1.5 text-center">
                               {canDateFilter ? (
                                 <button
+                                  type="button"
                                   onClick={() => setDateFilter(ti, ci)}
                                   className={`w-4 h-4 rounded-full border text-xs flex items-center justify-center mx-auto transition-colors ${
                                     col.dateFilter
@@ -585,7 +655,7 @@ export default function SourceEditor({ connections, initial, onSaved }: Props) {
                                   {col.dateFilter && <span className="w-2 h-2 rounded-full bg-white block" />}
                                 </button>
                               ) : (
-                                <td />
+                                <span className="inline-block w-4 h-4 mx-auto text-zinc-700">·</span>
                               )}
                             </td>
                             <td className="px-3 py-1.5 text-center">

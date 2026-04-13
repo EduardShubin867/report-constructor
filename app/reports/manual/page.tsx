@@ -6,6 +6,9 @@ import { getVisibleColumnDefs } from '@/lib/visible-columns';
 
 export const metadata: Metadata = { title: 'Конструктор — Отчёты' };
 
+/** Не отдавать устаревший bootstrap из Full Route Cache после деплоя / смены схемы. */
+export const dynamic = 'force-dynamic';
+
 async function bootstrapManualSource(id: string): Promise<ManualReportSourcePayload> {
   let filterOptions;
   let filterError = false;

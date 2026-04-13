@@ -6,6 +6,7 @@
 import { NextRequest } from 'next/server';
 import { deleteDynamicSource } from '@/lib/schema/store';
 import { invalidateSchemaCache } from '@/lib/schema';
+import { revalidateManualReportCaches } from '@/lib/report-filters-data';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +19,7 @@ export async function DELETE(
 
   deleteDynamicSource(id);
   invalidateSchemaCache();
+  revalidateManualReportCaches();
 
   return Response.json({ ok: true });
 }

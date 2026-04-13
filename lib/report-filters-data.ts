@@ -1,5 +1,6 @@
-import { unstable_cache } from 'next/cache';
+import { unstable_cache, revalidatePath, revalidateTag } from 'next/cache';
 import { getDataSources } from '@/lib/schema';
+import { BASE_PATH } from '@/lib/constants';
 import { getPool, queryWithTimeout, TIMEOUT } from '@/lib/db';
 import type { ColumnDef } from '@/lib/report-columns';
 import type { DataSource, TableSchema } from '@/lib/schema/types';
@@ -112,6 +113,15 @@ const loadSourceFilterOptionsCached = unstable_cache(
  */
 export async function loadSourceFilterOptions(sourceId: string): Promise<SourceFilterOptions> {
   return loadSourceFilterOptionsCached(sourceId);
+}
+
+/**
+ * Вызывать после изменения источника в админке (колонки, filterable, FK-фильтры и т.д.),
+ * чтобы сбросить Next Data Cache по DISTINCT-фильтрам и пересобрать RSC ручного отчёта.
+ */
+export function revalidateManualReportCaches(): void {
+  revalidateTag(REPORT_FILTER_OPTIONS_CACHE_TAG, { expire: 0 });
+  revalidatePath(`${BASE_PATH}/reports/manual`);
 }
 
 /** Server-prefetched bundle for one manual-report source (columns + filter dropdown data). */
