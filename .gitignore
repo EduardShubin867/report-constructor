@@ -24,6 +24,9 @@
 .DS_Store
 *.pem
 
+# oh-my-claudecode / Cursor agent state (local only)
+.omc/
+
 # local SQLite (agent analytics)
 /data/
 
