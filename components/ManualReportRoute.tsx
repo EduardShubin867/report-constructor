@@ -11,7 +11,25 @@ import UnifiedReportTable from '@/components/UnifiedReportTable';
 import { CONTRACT_COUNT_COLUMN_KEY, type ColumnDef } from '@/lib/report-columns';
 import type { FilterDef, ManualReportSourcePayload, SourceFilterOptions } from '@/lib/report-filters-data';
 import { BASE_PATH } from '@/lib/constants';
+
 type ManualSortState = { col: string | null; dir: 'asc' | 'desc' | null };
+
+/** Снимок последнего успешного запроса: таблица и пагинация не следуют за черновиком формы. */
+type AppliedReportSnapshot = {
+  columns: string[];
+  groupBy: string[];
+  filters: Record<string, string[]>;
+  dateFrom: string;
+  dateTo: string;
+  showContractCount: boolean;
+  sort: ManualSortState;
+};
+
+function cloneFilters(f: Record<string, string[]>): Record<string, string[]> {
+  const o: Record<string, string[]> = {};
+  for (const k of Object.keys(f)) o[k] = [...(f[k] ?? [])];
+  return o;
+}
 
 interface ReportResult {
   data: Record<string, unknown>[];
@@ -99,6 +117,8 @@ export default function ManualReportRoute({
   const [showContractCount, setShowContractCount] = useState(true);
   const [manualSort, setManualSort] = useState<ManualSortState>({ col: null, dir: null });
   const [result, setResult] = useState<ReportResult | null>(null);
+  /** После успешного запроса: колонки/фильтры для таблицы и пагинации (черновик формы отдельно). */
+  const [appliedSnapshot, setAppliedSnapshot] = useState<AppliedReportSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
@@ -123,6 +143,7 @@ export default function ManualReportRoute({
     setShowContractCount(true);
     setManualSort({ col: null, dir: null });
     setResult(null);
+    setAppliedSnapshot(null);
     setHasSearched(false);
     setPage(1);
     const p = bootstrapById[selectedSourceId];
@@ -205,6 +226,49 @@ export default function ManualReportRoute({
     [filterOptions.options, lazyFilterOptions],
   );
 
+  const serverSortForTable =
+    appliedSnapshot !== null && hasSearched ? appliedSnapshot.sort : manualSort;
+
+  const tableColumns = useMemo(() => {
+    const activeSpec = appliedSnapshot !== null && hasSearched ? appliedSnapshot : null;
+    const colKeys = activeSpec?.columns ?? selectedColumns;
+    const gb = activeSpec?.groupBy ?? groupBy;
+    const showCnt = activeSpec?.showContractCount ?? showContractCount;
+
+    const resolve = (key: string) =>
+      visibleColumns.find(c => c.key === key) ?? groupByColumns.find(c => c.key === key);
+
+    if (gb.length > 0) {
+      return [
+        ...colKeys
+          .filter(k => gb.includes(k))
+          .map(k => resolve(k))
+          .filter((c): c is ColumnDef => c != null)
+          .map(c => ({ key: c.key, label: c.label, type: c.type, integer: c.integer })),
+        ...colKeys
+          .filter(k => !gb.includes(k))
+          .map(k => visibleColumns.find(c => c.key === k))
+          .filter((c): c is ColumnDef => c != null && c.type === 'number')
+          .map(c => ({ key: c.key, label: c.label, type: c.type, integer: c.integer })),
+        ...(showCnt
+          ? [{ key: CONTRACT_COUNT_COLUMN_KEY, label: 'Кол-во договоров', type: 'number' as const, integer: true }]
+          : []),
+      ];
+    }
+    return colKeys
+      .map(key => visibleColumns.find(column => column.key === key))
+      .filter((c): c is ColumnDef => c != null)
+      .map(c => ({ key: c.key, label: c.label, type: c.type, integer: c.integer }));
+  }, [
+    appliedSnapshot,
+    hasSearched,
+    selectedColumns,
+    groupBy,
+    showContractCount,
+    visibleColumns,
+    groupByColumns,
+  ]);
+
   const onLazyFilterOpen = useCallback(
     async (key: string) => {
       const fd = filterOptions.filterDefs.find(f => f.key === key);
@@ -231,10 +295,6 @@ export default function ManualReportRoute({
     },
     [filterOptions.filterDefs, selectedSourceId],
   );
-
-  useEffect(() => {
-    setManualSort({ col: null, dir: null });
-  }, [selectedSourceId, selectedColumns.join('|'), groupBy.join('|')]);
 
   const fetchReport = useCallback(async (
     nextPage: number,
@@ -282,8 +342,19 @@ export default function ManualReportRoute({
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? 'Ошибка сервера');
-      setResult(await res.json());
+      const json = (await res.json()) as ReportResult;
+      setResult(json);
       setHasSearched(true);
+      setAppliedSnapshot({
+        columns: [...columns],
+        groupBy: [...nextGroupBy],
+        filters: cloneFilters(nextFilters),
+        dateFrom: nextDateFrom,
+        dateTo: nextDateTo,
+        showContractCount: includeContractCountFlag,
+        sort: { col: sortState.col, dir: sortState.dir },
+      });
+      setManualSort({ col: sortState.col, dir: sortState.dir });
     } catch (error) {
       setManualError(error instanceof Error ? error.message : 'Неизвестная ошибка');
     } finally {
@@ -293,31 +364,23 @@ export default function ManualReportRoute({
 
   const handleServerSort = useCallback(
     (key: string) => {
-      if (selectedColumns.length === 0 || !hasSearched) return;
-      let next: ManualSortState = { col: null, dir: null };
-      setManualSort(prev => {
-        if (prev.col !== key) next = { col: key, dir: 'asc' };
-        else if (prev.dir === 'asc') next = { col: key, dir: 'desc' };
-        else if (prev.dir === 'desc') next = { col: null, dir: null };
-        else next = { col: key, dir: 'asc' };
-        return next;
-      });
+      if (!hasSearched) return;
+      const snap = appliedSnapshot;
+      if (!snap || snap.columns.length === 0) return;
+      const basis = snap.sort;
+      let next: ManualSortState;
+      if (basis.col !== key) next = { col: key, dir: 'asc' };
+      else if (basis.dir === 'asc') next = { col: key, dir: 'desc' };
+      else if (basis.dir === 'desc') next = { col: null, dir: null };
+      else next = { col: key, dir: 'asc' };
+      setManualSort(next);
       setPage(1);
-      void fetchReport(1, pageSize, genericFilters, dateFrom, dateTo, selectedColumns, groupBy, selectedSourceId, {
+      void fetchReport(1, pageSize, snap.filters, snap.dateFrom, snap.dateTo, snap.columns, snap.groupBy, selectedSourceId, {
         sort: next,
+        includeContractCount: snap.showContractCount,
       });
     },
-    [
-      hasSearched,
-      pageSize,
-      genericFilters,
-      dateFrom,
-      dateTo,
-      selectedColumns,
-      groupBy,
-      selectedSourceId,
-      fetchReport,
-    ],
+    [appliedSnapshot, hasSearched, pageSize, selectedSourceId, fetchReport],
   );
 
   const handleSubmit = () => {
@@ -326,34 +389,59 @@ export default function ManualReportRoute({
   };
 
   const handlePageChange = (nextPage: number) => {
+    const snap = appliedSnapshot;
     setPage(nextPage);
-    void fetchReport(nextPage, pageSize, genericFilters, dateFrom, dateTo, selectedColumns, groupBy, selectedSourceId);
+    if (snap) {
+      void fetchReport(nextPage, pageSize, snap.filters, snap.dateFrom, snap.dateTo, snap.columns, snap.groupBy, selectedSourceId, {
+        sort: snap.sort,
+        includeContractCount: snap.showContractCount,
+      });
+    } else {
+      void fetchReport(nextPage, pageSize, genericFilters, dateFrom, dateTo, selectedColumns, groupBy, selectedSourceId);
+    }
   };
 
   const handlePageSizeChange = (nextPageSize: number) => {
+    const snap = appliedSnapshot;
     setPageSize(nextPageSize);
     setPage(1);
-    void fetchReport(1, nextPageSize, genericFilters, dateFrom, dateTo, selectedColumns, groupBy, selectedSourceId);
+    if (snap) {
+      void fetchReport(1, nextPageSize, snap.filters, snap.dateFrom, snap.dateTo, snap.columns, snap.groupBy, selectedSourceId, {
+        sort: snap.sort,
+        includeContractCount: snap.showContractCount,
+      });
+    } else {
+      void fetchReport(1, nextPageSize, genericFilters, dateFrom, dateTo, selectedColumns, groupBy, selectedSourceId);
+    }
   };
 
   async function handleExportManual() {
     setExporting(true);
     setManualError(null);
     try {
+      const snap = appliedSnapshot;
+      const cols = snap?.columns ?? selectedColumns;
+      const gb = snap?.groupBy ?? groupBy;
+      const flt = snap?.filters ?? genericFilters;
+      const dFrom = snap?.dateFrom ?? dateFrom;
+      const dTo = snap?.dateTo ?? dateTo;
+      const showCnt = snap?.showContractCount ?? showContractCount;
+      const sort = snap?.sort ?? manualSort;
+
       const exportPayload: Record<string, unknown> = {
         sourceId: selectedSourceId,
-        columns: selectedColumns,
-        filters: genericFilters,
-        dateFrom: dateFrom || undefined,
-        dateTo: dateTo || undefined,
-        groupBy,
+        columns: cols,
+        filters: flt,
+        dateFrom: dFrom || undefined,
+        dateTo: dTo || undefined,
+        groupBy: gb,
       };
-      if (groupBy.length > 0 && !showContractCount) {
+      if (gb.length > 0 && !showCnt) {
         exportPayload.includeContractCount = false;
       }
-      if (manualSort.col && manualSort.dir) {
-        exportPayload.sortColumn = manualSort.col;
-        exportPayload.sortDirection = manualSort.dir;
+      if (sort.col && sort.dir) {
+        exportPayload.sortColumn = sort.col;
+        exportPayload.sortDirection = sort.dir;
       }
       const res = await fetch(`${BASE_PATH}/api/report/export`, {
         method: 'POST',
@@ -377,32 +465,6 @@ export default function ManualReportRoute({
     }
   }
 
-  function resolveColumnDef(key: string): ColumnDef | undefined {
-    return visibleColumns.find(c => c.key === key) ?? groupByColumns.find(c => c.key === key);
-  }
-
-  // Table column definitions: in grouped mode show dimensions + measures + count
-  const tableColumns = groupBy.length > 0
-    ? [
-        ...selectedColumns
-          .filter(k => groupBy.includes(k))
-          .map(k => resolveColumnDef(k))
-          .filter((c): c is ColumnDef => c != null)
-          .map(c => ({ key: c.key, label: c.label, type: c.type, integer: c.integer })),
-        ...selectedColumns
-          .filter(k => !groupBy.includes(k))
-          .map(k => visibleColumns.find(c => c.key === k))
-          .filter((c): c is ColumnDef => c != null && c.type === 'number')
-          .map(c => ({ key: c.key, label: c.label, type: c.type, integer: c.integer })),
-        ...(showContractCount
-          ? [{ key: CONTRACT_COUNT_COLUMN_KEY, label: 'Кол-во договоров', type: 'number' as const, integer: true }]
-          : []),
-      ]
-    : selectedColumns
-        .map(key => visibleColumns.find(column => column.key === key))
-        .filter((c): c is ColumnDef => c != null)
-        .map(c => ({ key: c.key, label: c.label, type: c.type, integer: c.integer }));
-
   const headerActions = hasSearched && result ? (
     <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="hidden sm:flex">
       <ExportButton loading={exporting} onClick={handleExportManual} />
@@ -414,6 +476,7 @@ export default function ManualReportRoute({
       onCreateReport={() => {
         setHasSearched(false);
         setResult(null);
+        setAppliedSnapshot(null);
         setManualError(null);
         setPage(1);
       }}
@@ -470,17 +533,18 @@ export default function ManualReportRoute({
             groupByActive={groupBy.length > 0}
             showContractCount={showContractCount}
             onShowContractCountChange={v => {
-              const needClearSort = !v && manualSort.col === CONTRACT_COUNT_COLUMN_KEY;
-              const nextSort = needClearSort ? { col: null, dir: null } : manualSort;
               setShowContractCount(v);
-              if (needClearSort) setManualSort({ col: null, dir: null });
-              if (hasSearched && selectedColumns.length > 0 && groupBy.length > 0) {
-                setPage(1);
-                void fetchReport(1, pageSize, genericFilters, dateFrom, dateTo, selectedColumns, groupBy, selectedSourceId, {
-                  includeContractCount: v,
-                  sort: nextSort,
-                });
-              }
+              const snap = appliedSnapshot;
+              if (!hasSearched || !snap || snap.groupBy.length === 0) return;
+              const prevSort = snap.sort;
+              const nextSort =
+                !v && prevSort.col === CONTRACT_COUNT_COLUMN_KEY ? { col: null, dir: null } : prevSort;
+              setManualSort(nextSort);
+              setPage(1);
+              void fetchReport(1, pageSize, snap.filters, snap.dateFrom, snap.dateTo, snap.columns, snap.groupBy, selectedSourceId, {
+                includeContractCount: v,
+                sort: nextSort,
+              });
             }}
           />
           <GroupBySelector
@@ -516,8 +580,8 @@ export default function ManualReportRoute({
             onPageChange={handlePageChange}
             onPageSizeChange={handlePageSizeChange}
             mode="server"
-            serverSortColumn={manualSort.col}
-            serverSortDirection={manualSort.dir}
+            serverSortColumn={serverSortForTable.col}
+            serverSortDirection={serverSortForTable.dir}
             onServerSortClick={handleServerSort}
           />
         ) : null}

@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import MultiSelect from './MultiSelect';
 import type { FilterDef } from '@/lib/report-filters-data';
 
@@ -38,6 +40,8 @@ export default function GenericReportFilters({
   const primaryDefs = filterDefs.filter(fd => (fd.tier ?? 'primary') === 'primary');
   const secondaryDefs = filterDefs.filter(fd => fd.tier === 'secondary');
   const showPrimaryBlock = primaryDefs.length > 0 || dateFilterCol !== null;
+  const [secondaryExpanded, setSecondaryExpanded] = useState(false);
+  const secondaryActiveCount = secondaryDefs.filter(fd => (values[fd.key]?.length ?? 0) > 0).length;
 
   const activeCount =
     filterDefs.filter(fd => (values[fd.key]?.length ?? 0) > 0).length +
@@ -112,29 +116,49 @@ export default function GenericReportFilters({
         )}
 
         {secondaryDefs.length > 0 && (
-          <section className="rounded-xl border border-outline-variant/20 bg-surface-container-low/40 p-4">
-            <h3 className="mb-1 font-headline text-xs font-semibold uppercase tracking-wide text-outline-variant">
-              Дополнительные фильтры
-            </h3>
-            <p className="mb-3 text-[11px] leading-snug text-outline-variant">
-              Загружаются при первом открытии списка — чтобы не замедлять первую загрузку страницы.
-            </p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {secondaryDefs.map(fd => (
-                <MultiSelect
-                  key={fd.key}
-                  label={fd.label}
-                  options={options[fd.key] ?? []}
-                  value={values[fd.key] ?? []}
-                  onChange={v => onFiltersChange({ ...values, [fd.key]: v })}
-                  placeholder="Все"
-                  loading={Boolean(lazyFilterLoading?.[fd.key])}
-                  onOpenChange={open => {
-                    if (open) onLazyFilterOpen?.(fd.key);
-                  }}
-                />
-              ))}
-            </div>
+          <section className="overflow-hidden rounded-xl border border-outline-variant/20 bg-surface-container-low/40">
+            <button
+              type="button"
+              onClick={() => setSecondaryExpanded(e => !e)}
+              className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-container-low/70"
+            >
+              <div className="min-w-0">
+                <h3 className="font-headline text-xs font-semibold uppercase tracking-wide text-outline-variant">
+                  Дополнительные фильтры
+                </h3>
+                <p className="mt-1 text-[11px] leading-snug text-outline-variant">
+                  {secondaryExpanded
+                    ? 'Загружаются при первом открытии списка — чтобы не замедлять первую загрузку страницы.'
+                    : `${secondaryActiveCount > 0 ? `${secondaryActiveCount} активных · ` : ''}По умолчанию свёрнуто — нажмите, чтобы развернуть.`}
+                </p>
+              </div>
+              <ChevronDown
+                className={`h-4 w-4 shrink-0 text-outline-variant transition-transform duration-200 ${
+                  secondaryExpanded ? 'rotate-180' : ''
+                }`}
+                strokeWidth={2.1}
+              />
+            </button>
+            {secondaryExpanded && (
+              <div className="border-t border-outline-variant/15 px-4 pb-4 pt-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {secondaryDefs.map(fd => (
+                    <MultiSelect
+                      key={fd.key}
+                      label={fd.label}
+                      options={options[fd.key] ?? []}
+                      value={values[fd.key] ?? []}
+                      onChange={v => onFiltersChange({ ...values, [fd.key]: v })}
+                      placeholder="Все"
+                      loading={Boolean(lazyFilterLoading?.[fd.key])}
+                      onOpenChange={open => {
+                        if (open) onLazyFilterOpen?.(fd.key);
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
           </section>
         )}
       </div>
