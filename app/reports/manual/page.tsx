@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 import ManualReportRoute from '@/components/ManualReportRoute';
+
+export const dynamic = 'force-dynamic';
 import { loadSourceFilterOptions, type ManualReportSourcePayload } from '@/lib/report-filters-data';
 import { getManualReportSources } from '@/lib/schema';
 import { getVisibleColumnDefs, getGroupByColumnDefs } from '@/lib/visible-columns';
