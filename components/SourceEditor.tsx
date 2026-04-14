@@ -272,16 +272,16 @@ export default function SourceEditor({ connections, initial, onSaved }: Props) {
     });
   }
 
-  function setDateFilter(tableIdx: number, colIdx: number) {
+  function togglePeriodFilter(tableIdx: number, colIdx: number) {
     if (!source) return;
     setSource(s => {
       if (!s) return s;
       const tables = s.tables.map((t, ti) => {
         if (ti !== tableIdx) return t;
         const columns = t.columns.map((c, ci) => {
-          if (ci !== colIdx) return { ...c, dateFilter: undefined };
+          if (ci !== colIdx) return c;
           // Clicking again clears it
-          return c.dateFilter ? { ...c, dateFilter: undefined } : { ...c, dateFilter: true };
+          return c.periodFilter ? { ...c, periodFilter: undefined } : { ...c, periodFilter: true };
         });
         return { ...t, columns };
       });
@@ -713,7 +713,7 @@ export default function SourceEditor({ connections, initial, onSaved }: Props) {
                             </div>
                           </div>
                         </th>
-                        <th className="text-center px-3 py-2 font-medium">Дата</th>
+                        <th className="text-center px-3 py-2 font-medium">Период</th>
                         <th className="text-center px-3 py-2 font-medium">
                           <div className="flex flex-col items-center gap-0.5">
                             <span>Видима</span>
@@ -742,7 +742,7 @@ export default function SourceEditor({ connections, initial, onSaved }: Props) {
                           bit: 'text-purple-400',
                         };
                         const canGroupable = col.type === 'string' || col.type === 'date' || col.type === 'bit';
-                        const canDateFilter = col.type === 'date';
+                        const canPeriodFilter = col.type === 'date' || col.type === 'number';
                         return (
                           <tr key={col.name} className={`border-t border-zinc-800 hover:bg-zinc-800/30 transition-opacity ${col.hidden ? 'opacity-40' : ''}`}>
                             <td className="px-3 py-1.5 text-zinc-200 font-mono text-xs">{col.name}</td>
@@ -805,17 +805,17 @@ export default function SourceEditor({ connections, initial, onSaved }: Props) {
                               )}
                             </td>
                             <td className="px-3 py-1.5 text-center">
-                              {canDateFilter ? (
+                              {canPeriodFilter ? (
                                 <button
                                   type="button"
-                                  onClick={() => setDateFilter(ti, ci)}
+                                  onClick={() => togglePeriodFilter(ti, ci)}
                                   className={`w-4 h-4 rounded-full border text-xs flex items-center justify-center mx-auto transition-colors ${
-                                    col.dateFilter
+                                    col.periodFilter
                                       ? 'bg-yellow-600 border-yellow-500 text-white'
                                       : 'border-zinc-600 hover:border-zinc-400'
                                   }`}
                                 >
-                                  {col.dateFilter && <span className="w-2 h-2 rounded-full bg-white block" />}
+                                  {col.periodFilter && <span className="w-2 h-2 rounded-full bg-white block" />}
                                 </button>
                               ) : (
                                 <span className="inline-block w-4 h-4 mx-auto text-zinc-700">·</span>

@@ -171,14 +171,26 @@ export function getSourceTableAlias(sourceId: string): string {
 }
 
 /**
- * Returns the dateFilter column name for a source (the column with dateFilter: true).
+ * Returns all columns with periodFilter: true for a source.
+ * Each entry has key (column name), label, and type ('date' | 'number').
  */
-export function getDateFilterColumn(sourceId: string): string | null {
+export function getPeriodFilterColumns(
+  sourceId: string,
+): Array<{ key: string; label: string; type: 'date' | 'number' }> {
   const source = getDataSources().find(s => s.id === sourceId);
-  if (!source) return null;
+  if (!source) return [];
   const table = getMainTable(source);
-  if (!table) return null;
-  return table.columns.find(c => c.dateFilter)?.name ?? null;
+  if (!table) return [];
+  return table.columns
+    .filter(c => c.periodFilter && (c.type === 'date' || c.type === 'number'))
+    .map(c => {
+      const known = COLUMN_LABEL_MAP.get(c.name);
+      return {
+        key: c.name,
+        label: c.label ?? known?.label ?? c.name,
+        type: c.type as 'date' | 'number',
+      };
+    });
 }
 
 // ---------------------------------------------------------------------------

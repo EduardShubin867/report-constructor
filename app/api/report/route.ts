@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
 
       // COUNT of groups (needs JOINs if groupBy references FK-derived cols)
       const countReq = pool.request();
-      const where = buildGenericWhere(countReq, filters, source, body.dateFrom, body.dateTo);
+      const where = buildGenericWhere(countReq, filters, source, body.periodFilters);
       const countResult = await queryWithTimeout(countReq,
         `SELECT COUNT(*) AS total FROM (
            SELECT 1 AS [_grp] FROM ${tableRef}
@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
       const total = (countResult.recordset[0] as { total: number }).total;
 
       const dataReq = pool.request();
-      buildGenericWhere(dataReq, filters, source, body.dateFrom, body.dateTo);
+      buildGenericWhere(dataReq, filters, source, body.periodFilters);
       dataReq.input('offset', sql.Int, offset);
       dataReq.input('pageSize', sql.Int, pageSize);
 
@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
     // --- DETAIL MODE ---
     // COUNT without JOINs (filters use subqueries for FK)
     const countReq = pool.request();
-    const where = buildGenericWhere(countReq, filters, source, body.dateFrom, body.dateTo);
+    const where = buildGenericWhere(countReq, filters, source, body.periodFilters);
     const countResult = await queryWithTimeout(countReq,
       `SELECT COUNT(*) AS total FROM ${tableRef} ${where}`,
       TIMEOUT.REPORT,
@@ -101,14 +101,14 @@ export async function POST(request: NextRequest) {
 
     const { select, joins } = buildGenericSelectAndJoins(cols, sourceId);
     const dataReq = pool.request();
-    buildGenericWhere(dataReq, filters, source, body.dateFrom, body.dateTo);
+    buildGenericWhere(dataReq, filters, source, body.periodFilters);
     dataReq.input('offset', sql.Int, offset);
     dataReq.input('pageSize', sql.Int, pageSize);
 
     // Find date filter col for ORDER BY fallback
     const source2 = source;
     const mainTable = source2.tables.find(t => t.columns.length > 0);
-    const dateCol = mainTable?.columns.find(c => c.dateFilter)?.name;
+    const dateCol = mainTable?.columns.find(c => c.periodFilter && c.type === 'date')?.name;
     const tableAlias = mainTable?.alias ?? 'm';
     const sortDirRaw = body.sortDirection;
     const sortDir =

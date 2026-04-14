@@ -5,6 +5,7 @@ import { getPool, queryWithTimeout, TIMEOUT } from '@/lib/db';
 import type { ColumnDef } from '@/lib/report-columns';
 import type { DataSource, TableSchema } from '@/lib/schema/types';
 import { buildFilterDescriptors } from '@/lib/report-filter-tier';
+import { getPeriodFilterColumns } from '@/lib/visible-columns';
 
 /** Next.js Data Cache TTL for on-demand DISTINCT filter-value SQL (seconds). */
 export const REPORT_FILTER_OPTIONS_REVALIDATE = 300;
@@ -26,11 +27,20 @@ export interface FilterDef {
   tier: 'primary' | 'secondary';
 }
 
+export interface PeriodFilterCol {
+  /** Column name — used as key in periodFilters Record */
+  key: string;
+  /** Human-readable label for the range control */
+  label: string;
+  /** Controls input type in the UI: date picker or number */
+  type: 'date' | 'number';
+}
+
 export interface SourceFilterOptions {
   filterDefs: FilterDef[];
   options: Record<string, string[]>;
-  /** Column name used for date-range filter, or null if none */
-  dateFilterCol: string | null;
+  /** Columns available as period (range) filters */
+  periodFilterCols: PeriodFilterCol[];
 }
 
 function getMainTable(source: DataSource): TableSchema | null {
@@ -39,10 +49,10 @@ function getMainTable(source: DataSource): TableSchema | null {
 
 function buildSourceFilterOptions(sourceId: string): SourceFilterOptions {
   const source = getDataSources().find(s => s.id === sourceId);
-  if (!source) return { filterDefs: [], options: {}, dateFilterCol: null };
+  if (!source) return { filterDefs: [], options: {}, periodFilterCols: [] };
 
   const table = getMainTable(source);
-  if (!table) return { filterDefs: [], options: {}, dateFilterCol: null };
+  if (!table) return { filterDefs: [], options: {}, periodFilterCols: [] };
 
   const descriptors = buildFilterDescriptors(source);
   const filterDefs: FilterDef[] = descriptors.map(d => ({
@@ -56,9 +66,9 @@ function buildSourceFilterOptions(sourceId: string): SourceFilterOptions {
     descriptors.map(d => [d.key, [] as string[]]),
   );
 
-  const dateFilterCol = table.columns.find(c => c.dateFilter)?.name ?? null;
+  const periodFilterCols = getPeriodFilterColumns(sourceId);
 
-  return { filterDefs, options, dateFilterCol };
+  return { filterDefs, options, periodFilterCols };
 }
 
 /** Одна DISTINCT-выборка для ключа фильтра (для lazy-дропдаунов). */
@@ -89,7 +99,7 @@ const loadSingleFilterKeyValuesCached = unstable_cache(
  * Loads filter definitions and option values for a data source.
  *
  * - Direct / FK filter values are loaded lazily on dropdown open via `/api/report/filter-options`.
- * - dateFilterCol: name of the column with dateFilter: true (for date-range UI)
+ * - periodFilterCols: columns with periodFilter: true (for range inputs in UI)
  */
 export async function loadSourceFilterOptions(sourceId: string): Promise<SourceFilterOptions> {
   return buildSourceFilterOptions(sourceId);

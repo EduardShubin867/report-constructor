@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
           ? `ORDER BY [${sortCol}] ${sortDir}`
           : `ORDER BY [${groupBy[0]}]`;
       const dataReq = pool.request();
-      const where = buildGenericWhere(dataReq, filters, source, body.dateFrom, body.dateTo);
+      const where = buildGenericWhere(dataReq, filters, source, body.periodFilters);
 
       result = await queryWithTimeout(dataReq,
         `SELECT ${select}
@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
     } else {
       const { select, joins } = buildGenericSelectAndJoins(cols, sourceId);
       const mainTable = source.tables.find(t => t.columns.length > 0);
-      const dateCol = mainTable?.columns.find(c => c.dateFilter)?.name;
+      const dateCol = mainTable?.columns.find(c => c.periodFilter && c.type === 'date')?.name;
       const tableAlias = mainTable?.alias ?? 'm';
       const sortDirRaw = body.sortDirection;
       const sortDir =
@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
             : `ORDER BY ${tableAlias}.[ID] DESC`;
 
       const dataReq = pool.request();
-      const where = buildGenericWhere(dataReq, filters, source, body.dateFrom, body.dateTo);
+      const where = buildGenericWhere(dataReq, filters, source, body.periodFilters);
 
       result = await queryWithTimeout(dataReq,
         `SELECT ${select}

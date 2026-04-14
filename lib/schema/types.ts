@@ -17,8 +17,8 @@ export interface ColumnSchema {
   hidden?: boolean;
   /** If true, column is available as a GROUP BY dimension in manual report */
   groupable?: boolean;
-  /** If true, this date column is used as the date-range filter in manual report (max 1 per table) */
-  dateFilter?: boolean;
+  /** If true, column is available as a period (range) filter in manual report (works for date and number types) */
+  periodFilter?: boolean;
 }
 
 export interface ForeignKeyFilterConfig {

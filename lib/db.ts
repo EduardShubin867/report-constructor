@@ -1,6 +1,9 @@
 import sql from 'mssql';
 import type { StoredConnection } from './schema/types';
 
+// Slightly above EXPORT (60s) so app-level queryWithTimeout always fires first.
+const DRIVER_REQUEST_TIMEOUT_MS = 70_000;
+
 function buildConfig(conn: StoredConnection, database: string): sql.config {
   return {
     server: conn.server,
@@ -8,6 +11,7 @@ function buildConfig(conn: StoredConnection, database: string): sql.config {
     user: conn.user,
     password: conn.password,
     port: conn.port ?? 1433,
+    requestTimeout: DRIVER_REQUEST_TIMEOUT_MS,
     options: {
       encrypt: conn.encrypt ?? false,
       trustServerCertificate: conn.trustServerCertificate ?? true,
@@ -23,6 +27,7 @@ function buildDefaultConfig(): sql.config {
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     port: parseInt(process.env.DB_PORT ?? '1433', 10),
+    requestTimeout: DRIVER_REQUEST_TIMEOUT_MS,
     options: {
       encrypt: process.env.DB_ENCRYPT === 'true',
       trustServerCertificate: process.env.DB_TRUST_CERT !== 'false',
@@ -41,7 +46,18 @@ const pools = new Map<string, sql.ConnectionPool>();
 async function createPool(key: string, config: sql.config): Promise<sql.ConnectionPool> {
   console.log(`Connecting pool [${key}] to`, { server: config.server, database: config.database, user: config.user, port: config.port });
   const p = new sql.ConnectionPool(config);
-  p.on('error', err => console.error(`SQL Pool [${key}] error:`, err));
+  p.on('error', err => {
+    console.error(`SQL Pool [${key}] error:`, err);
+    const isConnectionError =
+      (err as NodeJS.ErrnoException).code === 'ETIMEOUT' ||
+      (err as NodeJS.ErrnoException).code === 'ECONNREFUSED' ||
+      (err as NodeJS.ErrnoException).code === 'ESOCKET' ||
+      err.name === 'ConnectionError';
+    if (isConnectionError && pools.get(key) === p) {
+      pools.delete(key);
+      p.close().catch(() => {});
+    }
+  });
   const connected = await p.connect();
   pools.set(key, connected);
   console.log(`Pool [${key}] connected.`);
@@ -65,12 +81,14 @@ export async function getPoolForConnection(
   if (!conn || !connectionId || !database) {
     const existing = pools.get('default');
     if (existing?.connected) return existing;
+    if (existing) pools.delete('default');
     return createPool('default', buildDefaultConfig());
   }
 
   const key = `${connectionId}:${database}`;
   const existing = pools.get(key);
   if (existing?.connected) return existing;
+  if (existing) pools.delete(key);
   return createPool(key, buildConfig(conn, database));
 }
 

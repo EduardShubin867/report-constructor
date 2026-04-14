@@ -17,7 +17,7 @@ export interface ColumnDef {
 /**
  * Static label/metadata reference for known columns.
  * Serves as a lookup table for UI labels and JOIN-derived column definitions.
- * Logic (hidden, filterable, groupable, dateFilter) now comes from data/sources.json.
+ * Logic (hidden, filterable, groupable, periodFilter) now comes from data/sources.json.
  *
  * FK column aliases use the schema FK alias (dg, ter, krm, krp).
  */

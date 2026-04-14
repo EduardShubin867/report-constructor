@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import MultiSelect from './MultiSelect';
-import type { FilterDef } from '@/lib/report-filters-data';
+import type { FilterDef, PeriodFilterCol } from '@/lib/report-filters-data';
 
 const PRIMARY_FILTERS_LIMIT = 6;
 
@@ -11,29 +11,27 @@ interface Props {
   filterDefs: FilterDef[];
   options: Record<string, string[]>;
   values: Record<string, string[]>;
-  dateFilterCol: string | null;
-  dateFrom: string;
-  dateTo: string;
+  periodFilterCols: PeriodFilterCol[];
+  periodFilters: Record<string, { from: string; to: string }>;
   filtersLoading?: boolean;
   /** Подгрузка опций для secondary-фильтра при первом открытии дропдауна */
   onLazyFilterOpen?: (key: string) => void;
   lazyFilterLoading?: Record<string, boolean>;
   onFiltersChange: (v: Record<string, string[]>) => void;
-  onDateChange: (from: string, to: string) => void;
+  onPeriodChange: (key: string, from: string, to: string) => void;
 }
 
 export default function GenericReportFilters({
   filterDefs,
   options,
   values,
-  dateFilterCol,
-  dateFrom,
-  dateTo,
+  periodFilterCols,
+  periodFilters,
   filtersLoading,
   onLazyFilterOpen,
   lazyFilterLoading,
   onFiltersChange,
-  onDateChange,
+  onPeriodChange,
 }: Props) {
   const explicitSecondaryDefs = filterDefs.filter(fd => fd.tier === 'secondary');
   const explicitPrimaryDefs = filterDefs.filter(fd => (fd.tier ?? 'primary') === 'primary');
@@ -43,7 +41,7 @@ export default function GenericReportFilters({
   const secondaryDefs = explicitSecondaryDefs.length > 0
     ? explicitSecondaryDefs
     : filterDefs.slice(primaryDefs.length);
-  const showPrimaryBlock = primaryDefs.length > 0 || dateFilterCol !== null;
+  const showPrimaryBlock = primaryDefs.length > 0 || periodFilterCols.length > 0;
   const [secondaryExpanded, setSecondaryExpanded] = useState(false);
   const secondaryActiveCount = secondaryDefs.filter(fd => (values[fd.key]?.length ?? 0) > 0).length;
   const activeLabels = useMemo(
@@ -54,13 +52,19 @@ export default function GenericReportFilters({
     [filterDefs, values],
   );
 
+  const activePeriodCount = periodFilterCols.filter(col => {
+    const p = periodFilters[col.key];
+    return p?.from || p?.to;
+  }).length;
+
   const activeCount =
-    filterDefs.filter(fd => (values[fd.key]?.length ?? 0) > 0).length +
-    (dateFrom || dateTo ? 1 : 0);
+    filterDefs.filter(fd => (values[fd.key]?.length ?? 0) > 0).length + activePeriodCount;
 
   function handleReset() {
     onFiltersChange({});
-    onDateChange('', '');
+    for (const col of periodFilterCols) {
+      onPeriodChange(col.key, '', '');
+    }
   }
 
   return (
@@ -103,9 +107,9 @@ export default function GenericReportFilters({
                 +{activeLabels.length - 5}
               </span>
             ) : null}
-            {dateFrom || dateTo ? (
+            {activePeriodCount > 0 ? (
               <span className="ui-chip-accent inline-flex items-center rounded-full px-3 py-1 text-xs font-medium">
-                Выбран период
+                {activePeriodCount === 1 ? 'Выбран период' : `Выбрано периодов: ${activePeriodCount}`}
               </span>
             ) : null}
           </div>
@@ -149,26 +153,32 @@ export default function GenericReportFilters({
                 </div>
               ))}
 
-              {dateFilterCol !== null && (
-                <div className="rounded-[20px] border border-white/55 bg-surface-container-lowest/78 p-3 shadow-[0_8px_20px_rgba(23,32,43,0.03)] xl:col-span-2">
-                  <label className="mb-1 block text-sm font-medium text-on-surface">Период</label>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-center">
-                    <input
-                      type="date"
-                      value={dateFrom}
-                      onChange={e => onDateChange(e.target.value, dateTo)}
-                      className="ui-field min-w-0 rounded-xl px-3 py-2.5 text-sm focus:border-primary focus:outline-none"
-                    />
-                    <span className="hidden text-center text-outline-variant sm:block">—</span>
-                    <input
-                      type="date"
-                      value={dateTo}
-                      onChange={e => onDateChange(dateFrom, e.target.value)}
-                      className="ui-field min-w-0 rounded-xl px-3 py-2.5 text-sm focus:border-primary focus:outline-none"
-                    />
+              {periodFilterCols.map(col => {
+                const p = periodFilters[col.key] ?? { from: '', to: '' };
+                return (
+                  <div
+                    key={col.key}
+                    className="rounded-[20px] border border-white/55 bg-surface-container-lowest/78 p-3 shadow-[0_8px_20px_rgba(23,32,43,0.03)] xl:col-span-2"
+                  >
+                    <label className="mb-1 block text-sm font-medium text-on-surface">{col.label}</label>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-center">
+                      <input
+                        type={col.type === 'number' ? 'number' : 'date'}
+                        value={p.from}
+                        onChange={e => onPeriodChange(col.key, e.target.value, p.to)}
+                        className="ui-field min-w-0 rounded-xl px-3 py-2.5 text-sm focus:border-primary focus:outline-none"
+                      />
+                      <span className="hidden text-center text-outline-variant sm:block">—</span>
+                      <input
+                        type={col.type === 'number' ? 'number' : 'date'}
+                        value={p.to}
+                        onChange={e => onPeriodChange(col.key, p.from, e.target.value)}
+                        className="ui-field min-w-0 rounded-xl px-3 py-2.5 text-sm focus:border-primary focus:outline-none"
+                      />
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })}
             </div>
           </section>
         )}
@@ -234,7 +244,7 @@ export default function GenericReportFilters({
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs leading-5 text-on-surface-variant">
             {activeCount > 0
-              ? `Сейчас выбрано ${activeCount} ${activeCount === 1 ? 'условие' : activeCount < 5 ? 'условия' : 'условий'}${dateFrom || dateTo ? ' и период' : ''}. Можно запускать отчёт.`
+              ? `Сейчас выбрано ${activeCount} ${activeCount === 1 ? 'условие' : activeCount < 5 ? 'условия' : 'условий'}. Можно запускать отчёт.`
               : 'Фильтры не обязательны, но с ними обычно проще сразу выйти на нужный срез.'}
           </p>
           {activeCount > 0 ? (

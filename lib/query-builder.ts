@@ -14,8 +14,8 @@ export interface GenericReportRequest {
   columns: string[];
   /** columnKey or fkAlias → selected values */
   filters: Record<string, string[]>;
-  dateFrom?: string;
-  dateTo?: string;
+  /** columnName → { from, to } for period (range) filters */
+  periodFilters?: Record<string, { from: string; to: string }>;
   groupBy?: string[];
   /** В режиме группировки: добавлять ли COUNT(*) как «КоличествоДоговоров». По умолчанию true. */
   includeContractCount?: boolean;
@@ -94,14 +94,14 @@ export function safeGroupedSortColumn(
  * - Direct: filterable column → `m.[col] IN (@p0, @p1...)`
  * - FK: fk.alias with filterConfig → subquery on reference table
  *
- * Date range uses the column marked dateFilter: true in the schema.
+ * Period ranges use columns marked periodFilter: true in the schema.
+ * Multiple period filters are supported (date and number types).
  */
 export function buildGenericWhere(
   req: sql.Request,
   filters: Record<string, string[]>,
   source: DataSource,
-  dateFrom?: string,
-  dateTo?: string,
+  periodFilters?: Record<string, { from: string; to: string }>,
 ): string {
   const table = getMainTable(source);
   const alias = table.alias ?? 'm';
@@ -145,16 +145,34 @@ export function buildGenericWhere(
     }
   }
 
-  // Date range
-  const dateCol = table.columns.find(c => c.dateFilter)?.name;
-  if (dateCol) {
-    if (dateFrom) {
-      req.input('dateFrom', sql.Date, new Date(dateFrom));
-      conditions.push(`CAST(${alias}.[${dateCol}] AS DATE) >= @dateFrom`);
-    }
-    if (dateTo) {
-      req.input('dateTo', sql.Date, new Date(dateTo));
-      conditions.push(`CAST(${alias}.[${dateCol}] AS DATE) <= @dateTo`);
+  // Period ranges (multiple columns, date and number types)
+  if (periodFilters) {
+    let prIdx = 0;
+    for (const [colName, { from, to }] of Object.entries(periodFilters)) {
+      if (!from && !to) continue;
+      const col = table.columns.find(c => c.name === colName && c.periodFilter);
+      if (!col) continue;
+      const i = prIdx++;
+      if (col.type === 'number') {
+        if (from) {
+          req.input(`pr${i}f`, sql.Float, parseFloat(from));
+          conditions.push(`${alias}.[${colName}] >= @pr${i}f`);
+        }
+        if (to) {
+          req.input(`pr${i}t`, sql.Float, parseFloat(to));
+          conditions.push(`${alias}.[${colName}] <= @pr${i}t`);
+        }
+      } else {
+        // date (default)
+        if (from) {
+          req.input(`pr${i}f`, sql.Date, new Date(from));
+          conditions.push(`CAST(${alias}.[${colName}] AS DATE) >= @pr${i}f`);
+        }
+        if (to) {
+          req.input(`pr${i}t`, sql.Date, new Date(to));
+          conditions.push(`CAST(${alias}.[${colName}] AS DATE) <= @pr${i}t`);
+        }
+      }
     }
   }
 

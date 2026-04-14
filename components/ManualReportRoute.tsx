@@ -19,8 +19,7 @@ type AppliedReportSnapshot = {
   columns: string[];
   groupBy: string[];
   filters: Record<string, string[]>;
-  dateFrom: string;
-  dateTo: string;
+  periodFilters: Record<string, { from: string; to: string }>;
   showContractCount: boolean;
   sort: ManualSortState;
 };
@@ -59,7 +58,7 @@ interface ManualReportRouteProps {
 const emptyBootstrap: ManualReportSourcePayload = {
   columns: [],
   groupByColumns: [],
-  filterOptions: { filterDefs: [], options: {}, dateFilterCol: null },
+  filterOptions: { filterDefs: [], options: {}, periodFilterCols: [] },
 };
 
 /** Stable fallback when the prop is missing (RSC edge / stale client chunk). */
@@ -103,8 +102,7 @@ export default function ManualReportRoute({
     normalizeFilterOptions(boot0.filterOptions),
   );
   const [genericFilters, setGenericFilters] = useState<Record<string, string[]>>({});
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [periodFilters, setPeriodFilters] = useState<Record<string, { from: string; to: string }>>({});
   const [filtersLoading, setFiltersLoading] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState<ColumnDef[]>(boot0.columns);
   const [groupByColumns, setGroupByColumns] = useState<ColumnDef[]>(() =>
@@ -140,8 +138,8 @@ export default function ManualReportRoute({
   const activeFilterCount = useMemo(
     () =>
       filterOptions.filterDefs.filter(fd => (genericFilters[fd.key]?.length ?? 0) > 0).length +
-      (dateFrom || dateTo ? 1 : 0),
-    [dateFrom, dateTo, filterOptions.filterDefs, genericFilters],
+      Object.values(periodFilters).filter(p => p.from || p.to).length,
+    [periodFilters, filterOptions.filterDefs, genericFilters],
   );
   const canSubmitDraft = selectedColumns.length > 0 && !loading;
 
@@ -154,8 +152,7 @@ export default function ManualReportRoute({
       return;
     }
     setGenericFilters({});
-    setDateFrom('');
-    setDateTo('');
+    setPeriodFilters({});
     setGroupBy([]);
     setShowContractCount(true);
     setManualSort({ col: null, dir: null });
@@ -174,7 +171,7 @@ export default function ManualReportRoute({
       setFiltersLoading(true);
       setVisibleColumns([]);
       setGroupByColumns([]);
-      setFilterOptions(normalizeFilterOptions({ filterDefs: [], options: {}, dateFilterCol: null }));
+      setFilterOptions(normalizeFilterOptions({ filterDefs: [], options: {}, periodFilterCols: [] }));
       setSelectedColumns([]);
     }
   }, [selectedSourceId, bootstrapById]);
@@ -335,8 +332,7 @@ export default function ManualReportRoute({
     nextPage: number,
     nextPageSize: number,
     nextFilters: Record<string, string[]>,
-    nextDateFrom: string,
-    nextDateTo: string,
+    nextPeriodFilters: Record<string, { from: string; to: string }>,
     columns: string[],
     nextGroupBy: string[],
     sourceId: string,
@@ -352,12 +348,14 @@ export default function ManualReportRoute({
 
     const sortState = overrides?.sort ?? manualSort;
     const includeContractCountFlag = overrides?.includeContractCount ?? showContractCount;
+    const activePeriodFilters = Object.fromEntries(
+      Object.entries(nextPeriodFilters).filter(([, p]) => p.from || p.to),
+    );
     const payload: Record<string, unknown> = {
       sourceId,
       columns,
       filters: nextFilters,
-      dateFrom: nextDateFrom || undefined,
-      dateTo: nextDateTo || undefined,
+      periodFilters: Object.keys(activePeriodFilters).length > 0 ? activePeriodFilters : undefined,
       groupBy: nextGroupBy,
       page: nextPage,
       pageSize: nextPageSize,
@@ -384,8 +382,7 @@ export default function ManualReportRoute({
         columns: [...columns],
         groupBy: [...nextGroupBy],
         filters: cloneFilters(nextFilters),
-        dateFrom: nextDateFrom,
-        dateTo: nextDateTo,
+        periodFilters: { ...nextPeriodFilters },
         showContractCount: includeContractCountFlag,
         sort: { col: sortState.col, dir: sortState.dir },
       });
@@ -410,7 +407,7 @@ export default function ManualReportRoute({
       else next = { col: key, dir: 'asc' };
       setManualSort(next);
       setPage(1);
-      void fetchReport(1, pageSize, snap.filters, snap.dateFrom, snap.dateTo, snap.columns, snap.groupBy, selectedSourceId, {
+      void fetchReport(1, pageSize, snap.filters, snap.periodFilters, snap.columns, snap.groupBy, selectedSourceId, {
         sort: next,
         includeContractCount: snap.showContractCount,
       });
@@ -420,10 +417,9 @@ export default function ManualReportRoute({
 
   const handleSubmit = useCallback(() => {
     setPage(1);
-    void fetchReport(1, pageSize, genericFilters, dateFrom, dateTo, selectedColumns, groupBy, selectedSourceId);
+    void fetchReport(1, pageSize, genericFilters, periodFilters, selectedColumns, groupBy, selectedSourceId);
   }, [
-    dateFrom,
-    dateTo,
+    periodFilters,
     fetchReport,
     genericFilters,
     groupBy,
@@ -454,12 +450,12 @@ export default function ManualReportRoute({
     const snap = appliedSnapshot;
     setPage(nextPage);
     if (snap) {
-      void fetchReport(nextPage, pageSize, snap.filters, snap.dateFrom, snap.dateTo, snap.columns, snap.groupBy, selectedSourceId, {
+      void fetchReport(nextPage, pageSize, snap.filters, snap.periodFilters, snap.columns, snap.groupBy, selectedSourceId, {
         sort: snap.sort,
         includeContractCount: snap.showContractCount,
       });
     } else {
-      void fetchReport(nextPage, pageSize, genericFilters, dateFrom, dateTo, selectedColumns, groupBy, selectedSourceId);
+      void fetchReport(nextPage, pageSize, genericFilters, periodFilters, selectedColumns, groupBy, selectedSourceId);
     }
   };
 
@@ -468,12 +464,12 @@ export default function ManualReportRoute({
     setPageSize(nextPageSize);
     setPage(1);
     if (snap) {
-      void fetchReport(1, nextPageSize, snap.filters, snap.dateFrom, snap.dateTo, snap.columns, snap.groupBy, selectedSourceId, {
+      void fetchReport(1, nextPageSize, snap.filters, snap.periodFilters, snap.columns, snap.groupBy, selectedSourceId, {
         sort: snap.sort,
         includeContractCount: snap.showContractCount,
       });
     } else {
-      void fetchReport(1, nextPageSize, genericFilters, dateFrom, dateTo, selectedColumns, groupBy, selectedSourceId);
+      void fetchReport(1, nextPageSize, genericFilters, periodFilters, selectedColumns, groupBy, selectedSourceId);
     }
   };
 
@@ -485,17 +481,16 @@ export default function ManualReportRoute({
       const cols = snap?.columns ?? selectedColumns;
       const gb = snap?.groupBy ?? groupBy;
       const flt = snap?.filters ?? genericFilters;
-      const dFrom = snap?.dateFrom ?? dateFrom;
-      const dTo = snap?.dateTo ?? dateTo;
+      const pf = snap?.periodFilters ?? periodFilters;
       const showCnt = snap?.showContractCount ?? showContractCount;
       const sort = snap?.sort ?? manualSort;
+      const activePf = Object.fromEntries(Object.entries(pf).filter(([, p]) => p.from || p.to));
 
       const exportPayload: Record<string, unknown> = {
         sourceId: selectedSourceId,
         columns: cols,
         filters: flt,
-        dateFrom: dFrom || undefined,
-        dateTo: dTo || undefined,
+        periodFilters: Object.keys(activePf).length > 0 ? activePf : undefined,
         groupBy: gb,
       };
       if (gb.length > 0 && !showCnt) {
@@ -617,14 +612,13 @@ export default function ManualReportRoute({
               filterDefs={filterOptions.filterDefs}
               options={mergedFilterOptions}
               values={genericFilters}
-              dateFilterCol={filterOptions.dateFilterCol}
-              dateFrom={dateFrom}
-              dateTo={dateTo}
+              periodFilterCols={filterOptions.periodFilterCols}
+              periodFilters={periodFilters}
               filtersLoading={filtersLoading}
               onLazyFilterOpen={onLazyFilterOpen}
               lazyFilterLoading={lazyFilterLoading}
               onFiltersChange={setGenericFilters}
-              onDateChange={(from, to) => { setDateFrom(from); setDateTo(to); }}
+              onPeriodChange={(key, from, to) => setPeriodFilters(prev => ({ ...prev, [key]: { from, to } }))}
             />
           </div>
 
@@ -647,7 +641,7 @@ export default function ManualReportRoute({
                   !v && prevSort.col === CONTRACT_COUNT_COLUMN_KEY ? { col: null, dir: null } : prevSort;
                 setManualSort(nextSort);
                 setPage(1);
-                void fetchReport(1, pageSize, snap.filters, snap.dateFrom, snap.dateTo, snap.columns, snap.groupBy, selectedSourceId, {
+                void fetchReport(1, pageSize, snap.filters, snap.periodFilters, snap.columns, snap.groupBy, selectedSourceId, {
                   includeContractCount: v,
                   sort: nextSort,
                 });
