@@ -41,6 +41,26 @@ function getMainTable(source: DataSource): TableSchema {
   return t;
 }
 
+/**
+ * Detail report: default ORDER BY when there is no user sort and no date `periodFilter` column.
+ * Prefers `ID` when present in schema; otherwise first numeric period column, else first non-hidden column.
+ */
+export function detailReportOrderByLastResort(sourceId: string, tableAlias: string): string {
+  const table = getMainTable(getSource(sourceId));
+  if (table.columns.some(c => c.name === 'ID')) {
+    return `ORDER BY ${tableAlias}.[ID] DESC`;
+  }
+  const periodNum = table.columns.find(c => c.periodFilter && c.type === 'number')?.name;
+  if (periodNum) {
+    return `ORDER BY ${tableAlias}.[${periodNum}] DESC`;
+  }
+  const firstCol = table.columns.find(c => !c.hidden)?.name;
+  if (firstCol) {
+    return `ORDER BY ${tableAlias}.[${firstCol}] DESC`;
+  }
+  return 'ORDER BY (SELECT 0)';
+}
+
 // ── Column validation ────────────────────────────────────────────────────────
 
 /** Validate and return allowed column keys for a source. */
@@ -183,7 +203,7 @@ export function buildGenericWhere(
 
 /**
  * Builds SELECT clause and JOIN clauses for a detail (non-grouped) query.
- * Always includes the main table alias column `[alias].[ID]` as the first column.
+ * Prepends `[alias].[ID]` only when the main table schema lists column `ID` (stable row key + sort).
  */
 export function buildGenericSelectAndJoins(
   cols: string[],
@@ -199,12 +219,15 @@ export function buildGenericSelectAndJoins(
   const neededJoinKeys = new Set(colDefs.filter(c => c.joinKey).map(c => c.joinKey!));
   const joinClauses = [...neededJoinKeys].map(k => joinDefs[k]?.sql ?? '').filter(Boolean).join('\n');
 
-  const selectParts = [
-    `${alias}.[ID]`,
-    ...colDefs.map(col =>
+  const selectParts: string[] = [];
+  if (table.columns.some(c => c.name === 'ID')) {
+    selectParts.push(`${alias}.[ID]`);
+  }
+  for (const col of colDefs) {
+    selectParts.push(
       col.sqlExpr ? `${col.sqlExpr} AS [${col.key}]` : `${alias}.[${col.key}]`,
-    ),
-  ];
+    );
+  }
 
   return { select: selectParts.join(', '), joins: joinClauses };
 }

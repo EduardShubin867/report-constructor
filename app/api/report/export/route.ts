@@ -4,6 +4,7 @@ import {
   buildGenericWhere,
   buildGenericSelectAndJoins,
   buildGroupedSelectAndJoins,
+  detailReportOrderByLastResort,
   safeColumns,
   safeDetailSortColumn,
   safeGroupedSortColumn,
@@ -91,7 +92,7 @@ export async function POST(request: NextRequest) {
           ? `ORDER BY [${sortCol}] ${sortDir}`
           : dateCol
             ? `ORDER BY ${tableAlias}.[${dateCol}] DESC`
-            : `ORDER BY ${tableAlias}.[ID] DESC`;
+            : detailReportOrderByLastResort(sourceId, tableAlias);
 
       const dataReq = pool.request();
       const where = buildGenericWhere(dataReq, filters, source, body.periodFilters);

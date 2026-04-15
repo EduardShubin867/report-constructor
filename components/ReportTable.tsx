@@ -86,7 +86,10 @@ export default function ReportTable({
           </thead>
           <tbody className="divide-y divide-outline-variant/10">
             {data.map((row, i) => (
-              <tr key={row.ID as string ?? i} className="transition-colors hover:bg-surface-container-low">
+              <tr
+                key={row.ID != null && row.ID !== '' ? String(row.ID) : `p${page}-r${i}`}
+                className="transition-colors hover:bg-surface-container-low"
+              >
                 {colDefs.map(col => (
                   <td key={col.key}
                     className={`whitespace-nowrap px-5 py-2.5 text-xs text-on-surface ${col.type === 'number' ? 'text-right font-mono tabular-nums' : ''}`}>

@@ -388,7 +388,11 @@ export default function UnifiedReportTable({
               {isServer
                 ? data.map((row, i) => (
                     <tr
-                      key={(row.ID as string) ?? i}
+                      key={
+                        row.ID != null && row.ID !== ''
+                          ? String(row.ID)
+                          : `p${page ?? 1}-r${i}`
+                      }
                       className={`transition-colors hover:bg-primary-fixed/45 ${
                         i % 2 === 0 ? 'bg-surface-container-lowest/82' : 'bg-surface-container-low/28'
                       }`}

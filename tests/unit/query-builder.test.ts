@@ -3,6 +3,7 @@ import {
   buildGenericSelectAndJoins,
   buildGenericWhere,
   buildGroupedSelectAndJoins,
+  detailReportOrderByLastResort,
   safeColumns,
   safeDetailSortColumn,
   safeGroupedSortColumn,
@@ -82,17 +83,27 @@ describe('query-builder helpers', () => {
   });
 
   it('adds JOINs and projected aliases for joined columns in detail mode', () => {
-    const { source } = getFixtureSource();
-    const joinedColumn = getVisibleColumnDefs(source.id).find(column => column.joinKey);
-
+    const joinedColumn = getVisibleColumnDefs('osago').find(column => column.joinKey);
     expect(joinedColumn).toBeDefined();
 
-    const joins = getSourceJoinDefs(source.id);
-    const result = buildGenericSelectAndJoins([joinedColumn!.key], source.id);
+    const joins = getSourceJoinDefs('osago');
+    const result = buildGenericSelectAndJoins([joinedColumn!.key], 'osago');
 
     expect(result.select).toContain('.[ID]');
     expect(result.select).toContain(`AS [${joinedColumn!.key}]`);
     expect(result.joins).toContain(joins[joinedColumn!.joinKey!].sql);
+  });
+
+  it('omits ID from detail SELECT when the main table schema has no ID column', () => {
+    const dvs = getDataSources().find(s => s.id === 'dvs');
+    expect(dvs).toBeDefined();
+    const result = buildGenericSelectAndJoins(['Премия'], 'dvs');
+    expect(result.select).not.toMatch(/\.?\[ID\]/);
+    expect(result.select).toContain('m.[Премия]');
+  });
+
+  it('detailReportOrderByLastResort uses numeric period or first column when ID is absent', () => {
+    expect(detailReportOrderByLastResort('dvs', 'm')).toBe('ORDER BY m.[Срок] DESC');
   });
 
   it('builds grouped aggregates and keeps grouped sort allowlist tight', () => {
