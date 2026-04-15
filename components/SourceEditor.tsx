@@ -1,79 +1,70 @@
 'use client';
 
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { BASE_PATH } from '@/lib/constants';
-import type {
-  ColumnSchema,
-  DataSource,
-  ForeignKey,
-  ForeignKeyFilterConfig,
-  StoredConnection,
-} from '@/lib/schema/types';
+import SourceEditorActions from './source-editor/SourceEditorActions';
+import SourceEditorForm from './source-editor/SourceEditorForm';
+import SourceEditorReview from './source-editor/SourceEditorReview';
+import type { SourceEditorProps, SourceEditorPhase } from './source-editor/types';
+import { normalizeSourceForSave } from './source-editor/utils';
+import { useSourceEditorLocalState } from './source-editor/useSourceEditorLocalState';
 
-function filterTierFromColumn(col: ColumnSchema): 'off' | 'primary' | 'secondary' {
-  if (col.filterTier === 'primary' || col.filterTier === 'secondary') return col.filterTier;
-  if (col.filterable) return 'primary';
-  return 'off';
-}
-
-type Phase = 'idle' | 'introspecting' | 'review' | 'saving' | 'saved';
-
-const EMPTY_FORM = {
-  id: '',
-  name: '',
-  database: '',
-  schema: 'dbo',
-  whenToUse: '',
-  tables: '',
-  connectionId: '',
-};
-
-interface Props {
-  connections: StoredConnection[];
-  /** When provided, editor starts in review mode with existing data (edit mode) */
-  initial?: DataSource;
-  onSaved?: (source: DataSource) => void;
-}
-
-function sourceToForm(s: DataSource): typeof EMPTY_FORM {
-  return {
-    id: s.id,
-    name: s.name,
-    database: s.database ?? '',
-    schema: s.schema,
-    whenToUse: s.whenToUse ?? '',
-    tables: s.tables.map(t => t.name).join('\n'),
-    connectionId: s.connectionId ?? '',
-  };
-}
-
-export default function SourceEditor({ connections, initial, onSaved }: Props) {
+export default function SourceEditor({
+  connections,
+  initial,
+  onSaved,
+}: SourceEditorProps) {
   const isEdit = !!initial;
-
-  const [form, setForm] = useState(initial ? sourceToForm(initial) : EMPTY_FORM);
-  const [phase, setPhase] = useState<Phase>(initial ? 'review' : 'idle');
+  const [phase, setPhase] = useState<SourceEditorPhase>(initial ? 'review' : 'idle');
   const [error, setError] = useState<string | null>(null);
   const [log, setLog] = useState<string[]>([]);
-  const [source, setSource] = useState<DataSource | null>(initial ?? null);
   const [rescanningTable, setRescanningTable] = useState<string | null>(null);
   const [rescanMsg, setRescanMsg] = useState<Record<string, string>>({});
-  // Track which FK filter forms are open: key = `${tableIdx}-${fkIdx}`
-  const [fkFilterOpen, setFkFilterOpen] = useState<Record<string, boolean>>({});
 
-  function setField(key: keyof typeof EMPTY_FORM, value: string) {
-    setForm(f => ({ ...f, [key]: value }));
-  }
-
-  const selectedConn = connections.find(c => c.id === form.connectionId);
+  const {
+    form,
+    setField,
+    source,
+    setSource,
+    fkFilterOpen,
+    selectedConn,
+    mainTable,
+    refTables,
+    canIntrospect,
+    clearReviewedSource,
+    setColumnFilterTier,
+    setAllColumnFilterTier,
+    toggleHidden,
+    setAllHidden,
+    setAllGroupable,
+    setFkFilterTier,
+    toggleGroupable,
+    togglePeriodFilter,
+    toggleManualReport,
+    setFkFilterPanelOpen,
+    addFkFilter,
+    removeFkFilter,
+    setFkFilterConfig,
+    isFkGroupByFieldChecked,
+    toggleFkGroupByField,
+    setFkGroupByPreset,
+  } = useSourceEditorLocalState({
+    initial,
+    connections,
+  });
 
   async function handleIntrospect() {
     setError(null);
     setLog([]);
-    setSource(null);
+    clearReviewedSource();
     setPhase('introspecting');
 
-    const tables = form.tables.split('\n').map(t => t.trim()).filter(Boolean);
+    const tables = form.tables
+      .split('\n')
+      .map(table => table.trim())
+      .filter(Boolean);
+
     if (!tables.length) {
       setError('Введите хотя бы одну таблицу');
       setPhase('idle');
@@ -81,7 +72,7 @@ export default function SourceEditor({ connections, initial, onSaved }: Props) {
     }
 
     try {
-      const res = await fetch(`${BASE_PATH}/api/admin/introspect`, {
+      const response = await fetch(`${BASE_PATH}/api/admin/introspect`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -94,10 +85,10 @@ export default function SourceEditor({ connections, initial, onSaved }: Props) {
         }),
       });
 
-      const data = await res.json();
+      const data = await response.json();
       if (data.log) setLog(data.log);
 
-      if (!res.ok || !data.source) {
+      if (!response.ok || !data.source) {
         setError(data.error ?? 'Неизвестная ошибка');
         setPhase('idle');
         return;
@@ -105,1048 +96,195 @@ export default function SourceEditor({ connections, initial, onSaved }: Props) {
 
       setSource(data.source);
       setPhase('review');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Сетевая ошибка');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Сетевая ошибка');
       setPhase('idle');
     }
   }
 
   async function handleSave() {
     if (!source) return;
+
     setPhase('saving');
     setError(null);
 
-    // Merge user-provided fields that aren't generated by introspection
-    const toSave: DataSource = {
-      ...source,
-      name: form.name,
-      whenToUse: form.whenToUse.trim() || undefined,
-      tables: source.tables.map(t => ({
-        ...t,
-        columns: t.columns.map(({ filterable: _fb, ...c }) => c),
-      })),
-    };
+    const nextSource = normalizeSourceForSave(source, form);
 
     try {
-      const res = await fetch(`${BASE_PATH}/api/admin/sources`, {
+      const response = await fetch(`${BASE_PATH}/api/admin/sources`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source: toSave }),
+        body: JSON.stringify({ source: nextSource }),
       });
 
-      if (!res.ok) {
-        const data = await res.json();
+      if (!response.ok) {
+        const data = await response.json();
         setError(data.error ?? 'Ошибка сохранения');
         setPhase('review');
         return;
       }
 
       setPhase('saved');
-      onSaved?.(toSave);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Сетевая ошибка');
+      onSaved?.(nextSource);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Сетевая ошибка');
       setPhase('review');
     }
   }
 
-  function setColumnFilterTier(tableIdx: number, colIdx: number, tier: 'off' | 'primary' | 'secondary') {
-    if (!source) return;
-    setSource(s => {
-      if (!s) return s;
-      const tables = s.tables.map((t, ti) => {
-        if (ti !== tableIdx) return t;
-        const columns = t.columns.map((c, ci) => {
-          if (ci !== colIdx) return c;
-          if (tier === 'off') {
-            const next = { ...c } as ColumnSchema;
-            delete next.filterTier;
-            delete next.filterable;
-            return next;
-          }
-          return { ...c, filterTier: tier, filterable: undefined };
-        });
-        return { ...t, columns };
-      });
-      return { ...s, tables };
-    });
-  }
-
-  function toggleHidden(tableIdx: number, colIdx: number) {
-    if (!source) return;
-    setSource(s => {
-      if (!s) return s;
-      const tables = s.tables.map((t, ti) => {
-        if (ti !== tableIdx) return t;
-        const columns = t.columns.map((c, ci) => {
-          if (ci !== colIdx) return c;
-          return c.hidden ? { ...c, hidden: undefined } : { ...c, hidden: true };
-        });
-        return { ...t, columns };
-      });
-      return { ...s, tables };
-    });
-  }
-
-  function setAllHidden(tableIdx: number, hidden: boolean) {
-    if (!source) return;
-    setSource(s => {
-      if (!s) return s;
-      const tables = s.tables.map((t, ti) => {
-        if (ti !== tableIdx) return t;
-        const columns = t.columns.map(c =>
-          hidden ? { ...c, hidden: true } : { ...c, hidden: undefined },
-        );
-        return { ...t, columns };
-      });
-      return { ...s, tables };
-    });
-  }
-
-  function setAllColumnFilterTier(tableIdx: number, tier: 'off' | 'primary' | 'secondary') {
-    if (!source) return;
-    setSource(s => {
-      if (!s) return s;
-      const tables = s.tables.map((t, ti) => {
-        if (ti !== tableIdx) return t;
-        const columns = t.columns.map(c => {
-          if (tier === 'off') {
-            const next = { ...c } as ColumnSchema;
-            delete next.filterTier;
-            delete next.filterable;
-            return next;
-          }
-          return { ...c, filterTier: tier, filterable: undefined };
-        });
-        return { ...t, columns };
-      });
-      return { ...s, tables };
-    });
-  }
-
-  /** Groupable: строки, даты и bit — массово как в колонке «Видима». */
-  function setAllGroupable(tableIdx: number, enable: boolean) {
-    if (!source) return;
-    setSource(s => {
-      if (!s) return s;
-      const tables = s.tables.map((t, ti) => {
-        if (ti !== tableIdx) return t;
-        const columns = t.columns.map(c => {
-          const eligible = c.type === 'string' || c.type === 'date' || c.type === 'bit';
-          if (!eligible) return c;
-          return enable ? { ...c, groupable: true } : { ...c, groupable: undefined };
-        });
-        return { ...t, columns };
-      });
-      return { ...s, tables };
-    });
-  }
-
-  function setFkFilterTier(tableIdx: number, fkIdx: number, tier: 'primary' | 'secondary') {
-    if (!source) return;
-    setSource(s => {
-      if (!s) return s;
-      const tables = s.tables.map((t, ti) => {
-        if (ti !== tableIdx) return t;
-        const foreignKeys = (t.foreignKeys ?? []).map((fk, fi) =>
-          fi === fkIdx ? { ...fk, filterTier: tier } : fk,
-        );
-        return { ...t, foreignKeys };
-      });
-      return { ...s, tables };
-    });
-  }
-
-  function toggleGroupable(tableIdx: number, colIdx: number) {
-    if (!source) return;
-    setSource(s => {
-      if (!s) return s;
-      const tables = s.tables.map((t, ti) => {
-        if (ti !== tableIdx) return t;
-        const columns = t.columns.map((c, ci) => {
-          if (ci !== colIdx) return c;
-          return c.groupable ? { ...c, groupable: undefined } : { ...c, groupable: true };
-        });
-        return { ...t, columns };
-      });
-      return { ...s, tables };
-    });
-  }
-
-  function togglePeriodFilter(tableIdx: number, colIdx: number) {
-    if (!source) return;
-    setSource(s => {
-      if (!s) return s;
-      const tables = s.tables.map((t, ti) => {
-        if (ti !== tableIdx) return t;
-        const columns = t.columns.map((c, ci) => {
-          if (ci !== colIdx) return c;
-          // Clicking again clears it
-          return c.periodFilter ? { ...c, periodFilter: undefined } : { ...c, periodFilter: true };
-        });
-        return { ...t, columns };
-      });
-      return { ...s, tables };
-    });
-  }
-
-  function toggleManualReport() {
-    if (!source) return;
-    setSource(s => {
-      if (!s) return s;
-      return { ...s, manualReport: !s.manualReport };
-    });
-  }
-
-  function fkPanelKey(tableIdx: number, fkIdx: number) {
-    return `${tableIdx}-${fkIdx}`;
-  }
-
-  /** Только раскрытие панели — настройки не трогаем. */
-  function setFkFilterPanelOpen(tableIdx: number, fkIdx: number, open: boolean) {
-    const key = fkPanelKey(tableIdx, fkIdx);
-    setFkFilterOpen(prev => ({ ...prev, [key]: open }));
-  }
-
-  /** Первый шаг: включить фильтр и открыть форму (разумные значения по умолчанию). */
-  function addFkFilter(tableIdx: number, fkIdx: number) {
-    if (!source) return;
-    const t = source.tables[tableIdx];
-    const fk = t?.foreignKeys?.[fkIdx];
-    if (!fk) return;
-    const guessDisplay =
-      fk.targetFields.find(f => /наименован|названи|имя/i.test(f)) ?? fk.targetFields[0] ?? '';
-    const guessLabel = fk.alias.length <= 6 ? fk.alias.toUpperCase() : fk.targetTable;
-    setSource(s => {
-      if (!s) return s;
-      const tables = s.tables.map((tb, ti) => {
-        if (ti !== tableIdx) return tb;
-        const foreignKeys = (tb.foreignKeys ?? []).map((f, fi) =>
-          fi === fkIdx
-            ? {
-                ...f,
-                filterConfig: { displayField: guessDisplay, label: guessLabel },
-                filterTier: f.filterTier ?? 'primary',
-              }
-            : f,
-        );
-        return { ...tb, foreignKeys };
-      });
-      return { ...s, tables };
-    });
-    setFkFilterOpen(prev => ({ ...prev, [fkPanelKey(tableIdx, fkIdx)]: true }));
-  }
-
-  /** Удалить фильтр из ручного отчёта и закрыть панель. */
-  function removeFkFilter(tableIdx: number, fkIdx: number) {
-    setFkFilterPanelOpen(tableIdx, fkIdx, false);
-    setSource(s => {
-      if (!s) return s;
-      const tables = s.tables.map((t, ti) => {
-        if (ti !== tableIdx) return t;
-        const foreignKeys = (t.foreignKeys ?? []).map((fk, fi) =>
-          fi === fkIdx ? { ...fk, filterConfig: undefined, filterTier: undefined } : fk,
-        );
-        return { ...t, foreignKeys };
-      });
-      return { ...s, tables };
-    });
-  }
-
-  function setFkFilterConfig(tableIdx: number, fkIdx: number, config: Partial<ForeignKeyFilterConfig>) {
-    if (!source) return;
-    setSource(s => {
-      if (!s) return s;
-      const tables = s.tables.map((t, ti) => {
-        if (ti !== tableIdx) return t;
-        const foreignKeys = (t.foreignKeys ?? []).map((fk, fi) => {
-          if (fi !== fkIdx) return fk;
-          const existing = fk.filterConfig ?? { displayField: '', label: '' };
-          return { ...fk, filterConfig: { ...existing, ...config } };
-        });
-        return { ...t, foreignKeys };
-      });
-      return { ...s, tables };
-    });
-  }
-
-  function isFkGroupByFieldChecked(fk: ForeignKey, field: string): boolean {
-    if (fk.groupByFields === undefined) return true;
-    return fk.groupByFields.includes(field);
-  }
-
-  function toggleFkGroupByField(tableIdx: number, fkIdx: number, field: string) {
-    if (!source) return;
-    setSource(s => {
-      if (!s) return s;
-      const tables = s.tables.map((t, ti) => {
-        if (ti !== tableIdx) return t;
-        const foreignKeys = (t.foreignKeys ?? []).map((fk, fi) => {
-          if (fi !== fkIdx) return fk;
-          const all = fk.targetFields;
-          let next: string[] | undefined;
-          if (fk.groupByFields === undefined) {
-            next = all.filter(f => f !== field);
-          } else {
-            const set = new Set(fk.groupByFields);
-            if (set.has(field)) set.delete(field);
-            else set.add(field);
-            next = Array.from(set);
-          }
-          if (next.length === 0) return { ...fk, groupByFields: [] };
-          if (next.length === all.length && all.every(f => next!.includes(f)))
-            return { ...fk, groupByFields: undefined };
-          return { ...fk, groupByFields: next };
-        });
-        return { ...t, foreignKeys };
-      });
-      return { ...s, tables };
-    });
-  }
-
-  function setFkGroupByPreset(tableIdx: number, fkIdx: number, preset: 'all' | 'none') {
-    if (!source) return;
-    setSource(s => {
-      if (!s) return s;
-      const tables = s.tables.map((t, ti) => {
-        if (ti !== tableIdx) return t;
-        const foreignKeys = (t.foreignKeys ?? []).map((fk, fi) =>
-          fi === fkIdx
-            ? { ...fk, groupByFields: preset === 'all' ? undefined : [] }
-            : fk,
-        );
-        return { ...t, foreignKeys };
-      });
-      return { ...s, tables };
-    });
-  }
-
   async function handleRescan(tableName: string) {
     if (!source) return;
+
     setRescanningTable(tableName);
-    setRescanMsg(m => ({ ...m, [tableName]: '' }));
+    setRescanMsg(current => ({ ...current, [tableName]: '' }));
+
     try {
-      const res = await fetch(`${BASE_PATH}/api/admin/sources/${encodeURIComponent(source.id)}/rescan`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tableName }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.source) {
-        setRescanMsg(m => ({ ...m, [tableName]: `Ошибка: ${data.error ?? 'неизвестная ошибка'}` }));
+      const response = await fetch(
+        `${BASE_PATH}/api/admin/sources/${encodeURIComponent(source.id)}/rescan`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tableName }),
+        },
+      );
+      const data = await response.json();
+
+      if (!response.ok || !data.source) {
+        setRescanMsg(current => ({
+          ...current,
+          [tableName]: `Ошибка: ${data.error ?? 'неизвестная ошибка'}`,
+        }));
         return;
       }
+
       setSource(data.source);
-      const count = (data.newColumns as string[])?.length ?? 0;
-      setRescanMsg(m => ({
-        ...m,
-        [tableName]: count > 0
-          ? `найдено ${count} новых колонок: ${(data.newColumns as string[]).join(', ')}`
-          : 'новых колонок не найдено',
+      const newColumns = (data.newColumns as string[]) ?? [];
+
+      setRescanMsg(current => ({
+        ...current,
+        [tableName]:
+          newColumns.length > 0
+            ? `найдено ${newColumns.length} новых колонок: ${newColumns.join(', ')}`
+            : 'новых колонок не найдено',
       }));
-    } catch (e) {
-      setRescanMsg(m => ({ ...m, [tableName]: e instanceof Error ? e.message : 'Сетевая ошибка' }));
+    } catch (cause) {
+      setRescanMsg(current => ({
+        ...current,
+        [tableName]: cause instanceof Error ? cause.message : 'Сетевая ошибка',
+      }));
     } finally {
       setRescanningTable(null);
     }
   }
 
-  function handleReset() {
+  function handleBackToForm() {
     setPhase('idle');
-    setSource(null);
-    setError(null);
+    clearReviewedSource();
     setLog([]);
   }
 
-  const mainTable = source?.tables.find(t => t.columns.length > 0);
-  const refTables = source?.tables.filter(t => t.columns.length === 0) ?? [];
-  const canIntrospect = !!form.id && !!form.name && !!form.database && !!form.connectionId && !!form.tables.trim();
+  function handleReset() {
+    setPhase('idle');
+    clearReviewedSource();
+    setError(null);
+    setLog([]);
+    setRescanMsg({});
+    setRescanningTable(null);
+  }
 
   return (
     <div className="space-y-6">
-      {/* ── Form ─────────────────────────────────────────────────────── */}
       {(phase === 'idle' || phase === 'introspecting') && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Left — metadata */}
-          <div className="space-y-3">
-            <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Источник</h3>
-            <label className="block">
-              <span className="text-xs text-zinc-400 mb-1 block">ID (slug)</span>
-              <input
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-zinc-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                placeholder="kasko"
-                value={form.id}
-                onChange={e => setField('id', e.target.value)}
-                disabled={phase === 'introspecting' || isEdit}
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs text-zinc-400 mb-1 block">Название</span>
-              <input
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-zinc-500"
-                placeholder="КАСКО Маржа"
-                value={form.name}
-                onChange={e => setField('name', e.target.value)}
-                disabled={phase === 'introspecting'}
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs text-zinc-400 mb-1 block">Когда использовать</span>
-              <textarea
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-zinc-500 resize-none"
-                rows={2}
-                placeholder="Используй для вопросов по ОСАГО, страховой марже и убыточности"
-                value={form.whenToUse}
-                onChange={e => setField('whenToUse', e.target.value)}
-                disabled={phase === 'introspecting'}
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs text-zinc-400 mb-1 block">База данных</span>
-              <input
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-zinc-500 font-mono"
-                placeholder="ExportUCS"
-                value={form.database}
-                onChange={e => setField('database', e.target.value)}
-                disabled={phase === 'introspecting'}
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs text-zinc-400 mb-1 block">Схема БД</span>
-              <input
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-zinc-500"
-                placeholder="dbo"
-                value={form.schema}
-                onChange={e => setField('schema', e.target.value)}
-                disabled={phase === 'introspecting'}
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs text-zinc-400 mb-1 block">Таблицы (по одной на строку)</span>
-              <textarea
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-zinc-500 font-mono"
-                rows={5}
-                placeholder={"Журнал_КАСКО_Маржа\nДГ\nТерритории"}
-                value={form.tables}
-                onChange={e => setField('tables', e.target.value)}
-                disabled={phase === 'introspecting'}
-              />
-            </label>
-          </div>
-
-          {/* Right — connection picker */}
-          <div className="space-y-3">
-            <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Подключение</h3>
-
-            {connections.length === 0 ? (
-              <div className="bg-zinc-800/50 border border-zinc-700 rounded-lg px-4 py-6 text-center text-sm text-zinc-500">
-                Нет сохранённых подключений.
-                <br />
-                <span className="text-zinc-400">Создайте подключение в разделе выше.</span>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {connections.map(conn => (
-                  <button
-                    key={conn.id}
-                    onClick={() => setField('connectionId', conn.id)}
-                    disabled={phase === 'introspecting'}
-                    className={`w-full text-left px-3 py-2.5 rounded-lg border transition-colors ${
-                      form.connectionId === conn.id
-                        ? 'border-zinc-500 bg-zinc-700/60'
-                        : 'border-zinc-700 bg-zinc-800/40 hover:bg-zinc-800'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${form.connectionId === conn.id ? 'bg-emerald-400' : 'bg-zinc-600'}`} />
-                      <span className="text-sm text-zinc-200">{conn.name}</span>
-                      <span className="text-xs text-zinc-500 ml-auto">{conn.dialect}</span>
-                    </div>
-                    <div className="text-xs text-zinc-500 font-mono mt-0.5 ml-3.5">
-                      {conn.server}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {selectedConn && (
-              <div className="bg-zinc-800/30 border border-zinc-700/50 rounded-lg px-3 py-2 text-xs text-zinc-400 space-y-0.5">
-                <div>Сервер: <span className="text-zinc-300 font-mono">{selectedConn.server}</span></div>
-                {selectedConn.user && <div>Пользователь: <span className="text-zinc-300">{selectedConn.user}</span></div>}
-              </div>
-            )}
-          </div>
-        </div>
+        <SourceEditorForm
+          form={form}
+          phase={phase}
+          isEdit={isEdit}
+          connections={connections}
+          selectedConn={selectedConn}
+          onFieldChange={setField}
+        />
       )}
 
-      {/* ── Error ───────────────────────────────────────────────────── */}
       <AnimatePresence>
         {error && (
           <motion.div
             initial={{ opacity: 0, y: -4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="bg-red-950/60 border border-red-800 rounded-lg px-4 py-3 text-sm text-red-300"
+            className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600"
           >
             {error}
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* ── Log ─────────────────────────────────────────────────────── */}
       {log.length > 0 && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-3 font-mono text-xs text-zinc-400 space-y-0.5">
-          {log.map((l, i) => <div key={i}>{l}</div>)}
+        <div className="space-y-0.5 rounded-lg border border-outline-variant/15 bg-surface-container p-3 font-mono text-xs text-on-surface-variant">
+          {log.map((line, index) => (
+            <div key={index}>{line}</div>
+          ))}
         </div>
       )}
 
-      {/* ── Review ──────────────────────────────────────────────────── */}
       <AnimatePresence>
         {phase === 'review' && source && (
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="space-y-4"
-          >
-            {mainTable && (
-              <div>
-                {/* Header row with table name + manualReport toggle */}
-                <div className="flex items-center gap-2 mb-2 flex-wrap">
-                  <h3 className="text-sm font-semibold text-zinc-200">{mainTable.name}</h3>
-                  {mainTable.alias && (
-                    <span className="text-xs bg-zinc-700 text-zinc-300 rounded px-1.5 py-0.5">alias: {mainTable.alias}</span>
-                  )}
-                  <span className="text-xs text-zinc-500">{mainTable.columns.length} колонок</span>
-
-                  {/* manualReport toggle */}
-                  <button
-                    onClick={toggleManualReport}
-                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded border text-xs transition-colors ${
-                      source.manualReport
-                        ? 'border-emerald-600 bg-emerald-950/60 text-emerald-300'
-                        : 'border-zinc-700 bg-zinc-800/40 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600'
-                    }`}
-                  >
-                    <span className={`w-3 h-3 rounded border flex items-center justify-center flex-shrink-0 ${
-                      source.manualReport
-                        ? 'bg-emerald-600 border-emerald-500 text-white'
-                        : 'border-zinc-600'
-                    }`}>
-                      {source.manualReport && <span className="text-[8px] leading-none">✓</span>}
-                    </span>
-                    Доступен в ручном отчёте
-                  </button>
-
-                  {isEdit && (
-                    <button
-                      onClick={() => handleRescan(mainTable.name)}
-                      disabled={rescanningTable === mainTable.name}
-                      className="ml-auto px-2.5 py-1 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed rounded text-xs text-zinc-300 transition-colors flex items-center gap-1.5"
-                    >
-                      {rescanningTable === mainTable.name ? (
-                        <>
-                          <span className="inline-block w-2.5 h-2.5 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin" />
-                          Сканирование...
-                        </>
-                      ) : 'Пересканировать'}
-                    </button>
-                  )}
-                </div>
-
-                {rescanMsg[mainTable.name] && (
-                  <div className={`mb-2 text-xs px-2 py-1 rounded ${
-                    rescanMsg[mainTable.name].startsWith('Ошибка')
-                      ? 'text-red-400 bg-red-950/40'
-                      : 'text-emerald-400 bg-emerald-950/40'
-                  }`}>
-                    {rescanMsg[mainTable.name]}
-                  </div>
-                )}
-
-                <div className="border border-zinc-700 rounded-lg overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="bg-zinc-800/60 text-zinc-400 text-xs">
-                        <th className="text-left px-3 py-2 font-medium">Колонка</th>
-                        <th className="text-left px-3 py-2 font-medium">Тип</th>
-                        <th className="text-center px-3 py-2 font-medium">
-                          <div className="flex flex-col items-center gap-0.5 max-w-[7rem] mx-auto">
-                            <span>Фильтр</span>
-                            <div className="flex flex-wrap justify-center gap-x-0.5 gap-y-0.5 text-[9px] leading-tight">
-                              <button
-                                type="button"
-                                title="Все колонки — основной фильтр (загрузка с страницей)"
-                                onClick={() => setAllColumnFilterTier(source.tables.indexOf(mainTable), 'primary')}
-                                className="text-zinc-400 hover:text-zinc-200 underline underline-offset-1"
-                              >все О</button>
-                              <span className="text-zinc-600">·</span>
-                              <button
-                                type="button"
-                                title="Все колонки — дополнительный фильтр (по открытию дропдауна)"
-                                onClick={() => setAllColumnFilterTier(source.tables.indexOf(mainTable), 'secondary')}
-                                className="text-zinc-400 hover:text-zinc-200 underline underline-offset-1"
-                              >все Д</button>
-                              <span className="text-zinc-600">·</span>
-                              <button
-                                type="button"
-                                onClick={() => setAllColumnFilterTier(source.tables.indexOf(mainTable), 'off')}
-                                className="text-zinc-400 hover:text-zinc-200 underline underline-offset-1"
-                              >снять</button>
-                            </div>
-                          </div>
-                        </th>
-                        <th className="text-center px-3 py-2 font-medium">
-                          <div className="flex flex-col items-center gap-0.5">
-                            <span>Groupable</span>
-                            <div className="flex gap-1">
-                              <button
-                                type="button"
-                                onClick={() => setAllGroupable(source.tables.indexOf(mainTable), true)}
-                                className="text-[10px] text-zinc-400 hover:text-zinc-200 underline underline-offset-1"
-                              >все</button>
-                              <span className="text-zinc-600">/</span>
-                              <button
-                                type="button"
-                                onClick={() => setAllGroupable(source.tables.indexOf(mainTable), false)}
-                                className="text-[10px] text-zinc-400 hover:text-zinc-200 underline underline-offset-1"
-                              >снять</button>
-                            </div>
-                          </div>
-                        </th>
-                        <th className="text-center px-3 py-2 font-medium">Период</th>
-                        <th className="text-center px-3 py-2 font-medium">
-                          <div className="flex flex-col items-center gap-0.5">
-                            <span>Видима</span>
-                            <div className="flex gap-1">
-                              <button
-                                onClick={() => setAllHidden(source.tables.indexOf(mainTable), false)}
-                                className="text-[10px] text-zinc-400 hover:text-zinc-200 underline underline-offset-1"
-                              >все</button>
-                              <span className="text-zinc-600">/</span>
-                              <button
-                                onClick={() => setAllHidden(source.tables.indexOf(mainTable), true)}
-                                className="text-[10px] text-zinc-400 hover:text-zinc-200 underline underline-offset-1"
-                              >скрыть</button>
-                            </div>
-                          </div>
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {mainTable.columns.map((col, ci) => {
-                        const ti = source.tables.indexOf(mainTable);
-                        const typeColors: Record<string, string> = {
-                          number: 'text-blue-400',
-                          string: 'text-green-400',
-                          date: 'text-yellow-400',
-                          bit: 'text-purple-400',
-                        };
-                        const canGroupable = col.type === 'string' || col.type === 'date' || col.type === 'bit';
-                        const canPeriodFilter = col.type === 'date' || col.type === 'number';
-                        return (
-                          <tr key={col.name} className={`border-t border-zinc-800 hover:bg-zinc-800/30 transition-opacity ${col.hidden ? 'opacity-40' : ''}`}>
-                            <td className="px-3 py-1.5 text-zinc-200 font-mono text-xs">{col.name}</td>
-                            <td className={`px-3 py-1.5 text-xs font-medium ${typeColors[col.type] ?? 'text-zinc-400'}`}>{col.type}</td>
-                            <td className="px-3 py-1.5 text-center">
-                              <div className="flex items-center justify-center gap-0.5">
-                                <button
-                                  type="button"
-                                  title="Нет фильтра"
-                                  onClick={() => setColumnFilterTier(ti, ci, 'off')}
-                                  className={`min-w-[1.35rem] rounded px-0.5 py-0.5 text-[10px] font-medium ${
-                                    filterTierFromColumn(col) === 'off'
-                                      ? 'bg-zinc-600 text-zinc-100'
-                                      : 'bg-zinc-800 text-zinc-500 hover:text-zinc-300'
-                                  }`}
-                                >
-                                  —
-                                </button>
-                                <button
-                                  type="button"
-                                  title="Основной (загрузка с сервером)"
-                                  onClick={() => setColumnFilterTier(ti, ci, 'primary')}
-                                  className={`min-w-[1.35rem] rounded px-0.5 py-0.5 text-[10px] font-medium ${
-                                    filterTierFromColumn(col) === 'primary'
-                                      ? 'bg-emerald-600 text-white'
-                                      : 'bg-zinc-800 text-zinc-500 hover:text-zinc-300'
-                                  }`}
-                                >
-                                  О
-                                </button>
-                                <button
-                                  type="button"
-                                  title="Дополнительный (по открытию)"
-                                  onClick={() => setColumnFilterTier(ti, ci, 'secondary')}
-                                  className={`min-w-[1.35rem] rounded px-0.5 py-0.5 text-[10px] font-medium ${
-                                    filterTierFromColumn(col) === 'secondary'
-                                      ? 'bg-teal-700 text-white'
-                                      : 'bg-zinc-800 text-zinc-500 hover:text-zinc-300'
-                                  }`}
-                                >
-                                  Д
-                                </button>
-                              </div>
-                            </td>
-                            <td className="px-3 py-1.5 text-center">
-                              {canGroupable ? (
-                                <button
-                                  type="button"
-                                  onClick={() => toggleGroupable(ti, ci)}
-                                  className={`w-4 h-4 rounded border text-xs flex items-center justify-center mx-auto transition-colors ${
-                                    col.groupable
-                                      ? 'bg-violet-600 border-violet-500 text-white'
-                                      : 'border-zinc-600 text-transparent hover:border-zinc-400'
-                                  }`}
-                                >
-                                  ✓
-                                </button>
-                              ) : (
-                                <span className="inline-block w-4 h-4 mx-auto text-zinc-700">·</span>
-                              )}
-                            </td>
-                            <td className="px-3 py-1.5 text-center">
-                              {canPeriodFilter ? (
-                                <button
-                                  type="button"
-                                  onClick={() => togglePeriodFilter(ti, ci)}
-                                  className={`w-4 h-4 rounded-full border text-xs flex items-center justify-center mx-auto transition-colors ${
-                                    col.periodFilter
-                                      ? 'bg-yellow-600 border-yellow-500 text-white'
-                                      : 'border-zinc-600 hover:border-zinc-400'
-                                  }`}
-                                >
-                                  {col.periodFilter && <span className="w-2 h-2 rounded-full bg-white block" />}
-                                </button>
-                              ) : (
-                                <span className="inline-block w-4 h-4 mx-auto text-zinc-700">·</span>
-                              )}
-                            </td>
-                            <td className="px-3 py-1.5 text-center">
-                              <button
-                                type="button"
-                                onClick={() => toggleHidden(ti, ci)}
-                                className={`w-4 h-4 rounded border text-xs flex items-center justify-center mx-auto transition-colors ${
-                                  !col.hidden
-                                    ? 'bg-blue-600 border-blue-500 text-white'
-                                    : 'border-zinc-600 text-transparent hover:border-zinc-400'
-                                }`}
-                              >
-                                ✓
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-
-                {mainTable.foreignKeys && mainTable.foreignKeys.length > 0 && (
-                  <div className="mt-4 rounded-xl border border-zinc-700/80 bg-zinc-900/20 p-3">
-                    <h4 className="text-sm font-semibold text-zinc-200">Внешние ключи (JOIN к справочникам)</h4>
-                    <p className="mt-1 text-xs leading-relaxed text-zinc-500">
-                      Связь колонки журнала со справочной таблицей. По желанию можно добавить{' '}
-                      <span className="text-zinc-400">фильтр в ручном отчёте</span>: тогда в отчёте появится
-                      мультиселект по значениям из справочника (как по полю в журнале).
-                    </p>
-                    <div className="mt-3 space-y-3">
-                      {mainTable.foreignKeys.map((fk: ForeignKey, fkIdx: number) => {
-                        const ti = source.tables.indexOf(mainTable);
-                        const panelKey = fkPanelKey(ti, fkIdx);
-                        const isOpen = !!fkFilterOpen[panelKey];
-                        const cfg = fk.filterConfig;
-                        const hasFilter = !!cfg;
-                        return (
-                          <div
-                            key={`${fk.column}-${fk.alias}-${fkIdx}`}
-                            className="overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900/40"
-                          >
-                            <div className="border-b border-zinc-800 bg-zinc-800/40 px-3 py-2">
-                              <div className="flex flex-wrap items-start justify-between gap-2">
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-xs font-medium text-zinc-200">
-                                    Справочник{' '}
-                                    <span className="font-mono text-emerald-400/90">[{source.schema}].[{fk.targetTable}]</span>
-                                  </p>
-                                  <p className="mt-1 font-mono text-[11px] leading-snug text-zinc-400">
-                                    <span className="text-zinc-500">В журнале:</span> [{fk.column}]{' '}
-                                    <span className="text-zinc-600">→</span> ключ справочника [{fk.targetColumn}]
-                                    <span className="text-zinc-600"> · </span>
-                                    <span className="text-zinc-500">псевдоним JOIN:</span>{' '}
-                                    <span className="text-amber-400/90">{fk.alias}</span>
-                                  </p>
-                                </div>
-                                {hasFilter ? (
-                                  <span className="shrink-0 rounded-md border border-emerald-800/60 bg-emerald-950/50 px-2 py-0.5 text-[10px] font-medium text-emerald-300">
-                                    фильтр в отчёте
-                                  </span>
-                                ) : (
-                                  <span className="shrink-0 rounded-md border border-zinc-700 bg-zinc-800/80 px-2 py-0.5 text-[10px] text-zinc-500">
-                                    только JOIN
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-
-                            <div className="px-3 py-2.5">
-                              {fk.targetFields.length > 0 && (
-                                <div className="mb-3 border-b border-zinc-800/80 pb-3">
-                                  <div className="flex flex-wrap items-center justify-between gap-2">
-                                    <p className="text-xs font-medium text-zinc-300">Группировка по справочнику</p>
-                                    <div className="flex flex-wrap gap-1.5">
-                                      <button
-                                        type="button"
-                                        onClick={() => setFkGroupByPreset(ti, fkIdx, 'all')}
-                                        className="rounded-md border border-zinc-600 bg-zinc-800/80 px-2 py-0.5 text-[10px] font-medium text-zinc-300 hover:border-zinc-500"
-                                      >
-                                        Все поля
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setFkGroupByPreset(ti, fkIdx, 'none')}
-                                        className="rounded-md border border-zinc-600 bg-zinc-800/80 px-2 py-0.5 text-[10px] font-medium text-zinc-300 hover:border-zinc-500"
-                                      >
-                                        Ни одного
-                                      </button>
-                                    </div>
-                                  </div>
-                                  <p className="mt-1 text-[11px] leading-relaxed text-zinc-500">
-                                    Какие колонки справочника доступны как измерения в ручном отчёте (GROUP BY). По
-                                    умолчанию — все; пустой набор отключает этот FK для группировки.
-                                  </p>
-                                  <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1.5">
-                                    {fk.targetFields.map(field => (
-                                      <label
-                                        key={field}
-                                        className="flex cursor-pointer items-center gap-1.5 text-[11px] text-zinc-300"
-                                      >
-                                        <input
-                                          type="checkbox"
-                                          checked={isFkGroupByFieldChecked(fk, field)}
-                                          onChange={() => toggleFkGroupByField(ti, fkIdx, field)}
-                                          className="rounded border-zinc-600 bg-zinc-800 text-emerald-600 focus:ring-emerald-600/40"
-                                        />
-                                        <span className="font-mono text-zinc-400">{field}</span>
-                                      </label>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-
-                              {!hasFilter ? (
-                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                  <p className="text-xs text-zinc-500">
-                                    Добавьте фильтр, если нужен выпадающий список по этому справочнику в ручном отчёте.
-                                  </p>
-                                  <button
-                                    type="button"
-                                    onClick={() => addFkFilter(ti, fkIdx)}
-                                    className="shrink-0 rounded-lg border border-emerald-700/50 bg-emerald-950/40 px-3 py-1.5 text-xs font-medium text-emerald-200 transition-colors hover:bg-emerald-950/70"
-                                  >
-                                    Добавить фильтр…
-                                  </button>
-                                </div>
-                              ) : (
-                                <>
-                                  <div className="flex flex-col gap-2 border-b border-zinc-800/80 pb-2.5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-                                    <div className="text-xs text-zinc-400">
-                                      <span className="text-zinc-500">Подпись в отчёте:</span>{' '}
-                                      <span className="font-medium text-zinc-200">{cfg.label || '—'}</span>
-                                      <span className="mx-1.5 text-zinc-600">·</span>
-                                      <span className="text-zinc-500">поле списка:</span>{' '}
-                                      <span className="font-mono text-zinc-300">{cfg.displayField || '—'}</span>
-                                    </div>
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <span className="text-[10px] uppercase tracking-wide text-zinc-500">
-                                        Загрузка списка
-                                      </span>
-                                      <div className="flex rounded-lg border border-zinc-600 p-0.5">
-                                        <button
-                                          type="button"
-                                          title="Сразу при открытии страницы отчёта"
-                                          onClick={() => setFkFilterTier(ti, fkIdx, 'primary')}
-                                          className={`rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${
-                                            (fk.filterTier ?? 'primary') === 'primary'
-                                              ? 'bg-emerald-600 text-white'
-                                              : 'text-zinc-400 hover:text-zinc-200'
-                                          }`}
-                                        >
-                                          Сразу
-                                        </button>
-                                        <button
-                                          type="button"
-                                          title="При первом открытии этого фильтра"
-                                          onClick={() => setFkFilterTier(ti, fkIdx, 'secondary')}
-                                          className={`rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${
-                                            fk.filterTier === 'secondary'
-                                              ? 'bg-teal-700 text-white'
-                                              : 'text-zinc-400 hover:text-zinc-200'
-                                          }`}
-                                        >
-                                          По клику
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                  <div className="mt-2 flex flex-wrap gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => setFkFilterPanelOpen(ti, fkIdx, !isOpen)}
-                                      className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
-                                        isOpen
-                                          ? 'border-amber-600/70 bg-amber-950/40 text-amber-200'
-                                          : 'border-zinc-600 bg-zinc-800 text-zinc-300 hover:border-zinc-500'
-                                      }`}
-                                    >
-                                      {isOpen ? 'Свернуть настройки' : 'Изменить поля'}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => removeFkFilter(ti, fkIdx)}
-                                      className="rounded-lg border border-red-900/50 bg-red-950/30 px-3 py-1.5 text-xs font-medium text-red-300/90 transition-colors hover:bg-red-950/50"
-                                    >
-                                      Убрать фильтр
-                                    </button>
-                                  </div>
-
-                                  {isOpen && (
-                                    <div className="mt-3 space-y-3 rounded-lg border border-zinc-700/60 bg-zinc-950/50 p-3">
-                                      <p className="text-[11px] text-zinc-500">
-                                        Поле списка — колонка справочника, из которой берутся подписи в фильтре (часто
-                                        «Наименование»). Условие WHERE — опционально, накладывается на справочник.
-                                      </p>
-                                      <div className="flex flex-wrap gap-3">
-                                        <label className="flex min-w-[140px] flex-1 flex-col gap-1">
-                                          <span className="text-xs font-medium text-zinc-400">
-                                            Подпись у фильтра в отчёте
-                                          </span>
-                                          <input
-                                            className="rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-xs text-zinc-100 focus:border-zinc-500 focus:outline-none"
-                                            placeholder="Например: ДГ"
-                                            value={cfg.label}
-                                            onChange={e => setFkFilterConfig(ti, fkIdx, { label: e.target.value })}
-                                          />
-                                        </label>
-                                        <label className="flex min-w-[140px] flex-1 flex-col gap-1">
-                                          <span className="text-xs font-medium text-zinc-400">
-                                            Поле справочника для списка значений
-                                          </span>
-                                          <input
-                                            className="rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1.5 font-mono text-xs text-zinc-100 focus:border-zinc-500 focus:outline-none"
-                                            placeholder="Наименование"
-                                            value={cfg.displayField}
-                                            onChange={e =>
-                                              setFkFilterConfig(ti, fkIdx, { displayField: e.target.value })
-                                            }
-                                          />
-                                        </label>
-                                        <label className="flex min-w-[180px] flex-[2] flex-col gap-1">
-                                          <span className="text-xs font-medium text-zinc-400">
-                                            Доп. условие к справочнику (SQL WHERE)
-                                          </span>
-                                          <input
-                                            className="rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1.5 font-mono text-xs text-zinc-100 focus:border-zinc-500 focus:outline-none"
-                                            placeholder="ПометкаУдаления = 0"
-                                            value={cfg.targetWhere ?? ''}
-                                            onChange={e =>
-                                              setFkFilterConfig(ti, fkIdx, {
-                                                targetWhere: e.target.value || undefined,
-                                              })
-                                            }
-                                          />
-                                        </label>
-                                      </div>
-                                    </div>
-                                  )}
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {refTables.length > 0 && (
-              <div>
-                <h4 className="text-xs text-zinc-500 mb-1">Справочные таблицы</h4>
-                <div className="flex flex-wrap gap-2">
-                  {refTables.map(t => (
-                    <span key={t.name} className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-400">
-                      {t.name}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </motion.div>
+          <SourceEditorReview
+            source={source}
+            mainTable={mainTable}
+            refTables={refTables}
+            isEdit={isEdit}
+            rescanningTable={rescanningTable}
+            rescanMsg={rescanMsg}
+            onToggleManualReport={toggleManualReport}
+            onRescan={handleRescan}
+            columnActions={{
+              onSetAllColumnFilterTier: setAllColumnFilterTier,
+              onSetAllGroupable: setAllGroupable,
+              onSetAllHidden: setAllHidden,
+              onSetColumnFilterTier: setColumnFilterTier,
+              onToggleGroupable: toggleGroupable,
+              onTogglePeriodFilter: togglePeriodFilter,
+              onToggleHidden: toggleHidden,
+            }}
+            foreignKeyActions={{
+              fkFilterOpen,
+              onSetFkFilterTier: setFkFilterTier,
+              onSetFkFilterPanelOpen: setFkFilterPanelOpen,
+              onAddFkFilter: addFkFilter,
+              onRemoveFkFilter: removeFkFilter,
+              onSetFkFilterConfig: setFkFilterConfig,
+              onIsFkGroupByFieldChecked: isFkGroupByFieldChecked,
+              onToggleFkGroupByField: toggleFkGroupByField,
+              onSetFkGroupByPreset: setFkGroupByPreset,
+            }}
+          />
         )}
       </AnimatePresence>
 
-      {/* ── Success ─────────────────────────────────────────────────── */}
       {phase === 'saved' && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="bg-emerald-950/60 border border-emerald-800 rounded-lg px-4 py-3 text-sm text-emerald-300 flex items-center gap-2"
+          className="flex items-center gap-2 rounded-lg border border-emerald-800 bg-emerald-950/60 px-4 py-3 text-sm text-emerald-300"
         >
           <span>Источник сохранён.</span>
           <button
+            type="button"
             onClick={handleReset}
-            className="ml-auto text-xs text-emerald-400 hover:text-emerald-200 underline underline-offset-2"
+            className="ml-auto text-xs text-emerald-400 underline underline-offset-2 hover:text-emerald-200"
           >
             Добавить ещё
           </button>
         </motion.div>
       )}
 
-      {/* ── Actions ─────────────────────────────────────────────────── */}
-      {phase !== 'saved' && (
-        <div className="flex items-center gap-3">
-          {(phase === 'idle' || phase === 'introspecting') && (
-            <button
-              onClick={handleIntrospect}
-              disabled={phase === 'introspecting' || !canIntrospect}
-              className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-sm text-zinc-100 transition-colors"
-            >
-              {phase === 'introspecting' ? (
-                <span className="flex items-center gap-2">
-                  <span className="inline-block w-3 h-3 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin" />
-                  Интроспекция...
-                </span>
-              ) : 'Интроспектировать с AI'}
-            </button>
-          )}
-
-          {phase === 'review' && (
-            <>
-              <button
-                onClick={() => { setPhase('idle'); setSource(null); setLog([]); }}
-                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm text-zinc-300 transition-colors"
-              >
-                Назад
-              </button>
-              <button
-                onClick={handleSave}
-                className="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-lg text-sm text-white transition-colors"
-              >
-                Сохранить источник
-              </button>
-            </>
-          )}
-
-          {phase === 'saving' && (
-            <button disabled className="px-4 py-2 bg-emerald-700 opacity-60 rounded-lg text-sm text-white flex items-center gap-2">
-              <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              Сохранение...
-            </button>
-          )}
-        </div>
-      )}
+      <SourceEditorActions
+        phase={phase}
+        canIntrospect={canIntrospect}
+        onIntrospect={handleIntrospect}
+        onBackToForm={handleBackToForm}
+        onSave={handleSave}
+      />
     </div>
   );
 }

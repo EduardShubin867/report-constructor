@@ -5,7 +5,6 @@ import { ChevronDown } from 'lucide-react';
 import MultiSelect from './MultiSelect';
 import type { FilterDef, PeriodFilterCol } from '@/lib/report-filters-data';
 
-const PRIMARY_FILTERS_LIMIT = 6;
 
 interface Props {
   filterDefs: FilterDef[];
@@ -33,14 +32,8 @@ export default function GenericReportFilters({
   onFiltersChange,
   onPeriodChange,
 }: Props) {
-  const explicitSecondaryDefs = filterDefs.filter(fd => fd.tier === 'secondary');
-  const explicitPrimaryDefs = filterDefs.filter(fd => (fd.tier ?? 'primary') === 'primary');
-  const primaryDefs = explicitSecondaryDefs.length > 0
-    ? explicitPrimaryDefs
-    : filterDefs.slice(0, PRIMARY_FILTERS_LIMIT);
-  const secondaryDefs = explicitSecondaryDefs.length > 0
-    ? explicitSecondaryDefs
-    : filterDefs.slice(primaryDefs.length);
+  const primaryDefs = filterDefs.filter(fd => (fd.tier ?? 'primary') === 'primary');
+  const secondaryDefs = filterDefs.filter(fd => fd.tier === 'secondary');
   const showPrimaryBlock = primaryDefs.length > 0 || periodFilterCols.length > 0;
   const [secondaryExpanded, setSecondaryExpanded] = useState(false);
   const secondaryActiveCount = secondaryDefs.filter(fd => (values[fd.key]?.length ?? 0) > 0).length;
@@ -184,7 +177,7 @@ export default function GenericReportFilters({
         )}
 
         {secondaryDefs.length > 0 && (
-          <section className="overflow-hidden rounded-[24px] border border-outline-variant/18 bg-surface-container-low/55">
+          <section className="rounded-[24px] border border-outline-variant/18 bg-surface-container-low/55">
             <button
               type="button"
               onClick={() => setSecondaryExpanded(e => !e)}

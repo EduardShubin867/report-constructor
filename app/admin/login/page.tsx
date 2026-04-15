@@ -35,14 +35,14 @@ export default function AdminLoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex items-center justify-center">
+    <div className="min-h-screen bg-surface-container-low/30 flex items-center justify-center">
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-sm space-y-6 bg-zinc-900 border border-zinc-800 rounded-xl p-8"
+        className="ui-panel w-full max-w-sm rounded-2xl p-8 space-y-6"
       >
         <div>
-          <h1 className="text-lg font-semibold text-zinc-100">Админ-панель</h1>
-          <p className="text-sm text-zinc-500 mt-1">Введите пароль для входа</p>
+          <h1 className="font-headline text-xl font-semibold text-on-surface">Админ-панель</h1>
+          <p className="text-sm text-on-surface-variant mt-1">Введите пароль для входа</p>
         </div>
 
         <div>
@@ -52,15 +52,15 @@ export default function AdminLoginPage() {
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Пароль"
             autoFocus
-            className="w-full px-4 py-2.5 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder-zinc-500 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-600"
+            className="ui-field w-full rounded-xl px-3 py-2.5 text-sm"
           />
-          {error && <p className="text-sm text-red-400 mt-2">{error}</p>}
+          {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
         </div>
 
         <button
           type="submit"
           disabled={loading || !password}
-          className="w-full py-2.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-colors"
+          className="ui-button-primary w-full rounded-xl py-2.5 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {loading ? 'Входим...' : 'Войти'}
         </button>

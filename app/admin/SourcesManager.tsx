@@ -101,13 +101,13 @@ export default function SourcesManager() {
       <section>
         <div className="flex items-center justify-between mb-3">
           <div>
-            <h2 className="text-base font-semibold text-zinc-200">Подключения к БД</h2>
-            <p className="text-xs text-zinc-500 mt-0.5">Один пул соединений на подключение. Несколько источников могут использовать одно подключение.</p>
+            <h2 className="text-base font-semibold text-on-surface">Подключения к БД</h2>
+            <p className="text-xs text-on-surface-variant mt-0.5">Один пул соединений на подключение. Несколько источников могут использовать одно подключение.</p>
           </div>
           {!connEditor.open && (
             <button
               onClick={() => setConnEditor({ open: true })}
-              className="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-sm text-zinc-200 transition-colors flex-shrink-0"
+              className="ui-button-secondary rounded-lg px-3 py-1.5 text-sm flex-shrink-0"
             >
               + Добавить
             </button>
@@ -121,11 +121,11 @@ export default function SourcesManager() {
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -4 }}
-              className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-5 mb-4"
+              className="ui-panel rounded-2xl p-5 mb-4"
             >
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-medium text-zinc-300">{connEditorTitle}</h3>
-                <button onClick={() => setConnEditor({ open: false })} className="text-zinc-500 hover:text-zinc-300 text-lg leading-none">×</button>
+                <h3 className="text-sm font-medium text-on-surface">{connEditorTitle}</h3>
+                <button onClick={() => setConnEditor({ open: false })} className="text-on-surface-variant/60 hover:text-on-surface text-lg leading-none">×</button>
               </div>
               <ConnectionEditor
                 initial={connEditor.open ? connEditor.initial : undefined}
@@ -143,7 +143,7 @@ export default function SourcesManager() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="bg-red-950/60 border border-red-800 rounded-lg px-4 py-2.5 text-sm text-red-300 mb-3"
+              className="bg-red-50 border border-red-200 rounded-lg px-4 py-2.5 text-sm text-red-600 mb-3"
             >
               {connDeleteError}
             </motion.div>
@@ -151,10 +151,10 @@ export default function SourcesManager() {
         </AnimatePresence>
 
         {/* Connections table */}
-        <div className="border border-zinc-800 rounded-xl overflow-hidden">
+        <div className="border border-outline-variant/15 rounded-xl overflow-hidden">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-zinc-800/50 text-zinc-400 text-xs">
+              <tr className="bg-surface-container text-on-surface-variant text-xs">
                 <th className="text-left px-4 py-2.5 font-medium">ID</th>
                 <th className="text-left px-4 py-2.5 font-medium">Название</th>
                 <th className="text-left px-4 py-2.5 font-medium">Диалект</th>
@@ -165,24 +165,24 @@ export default function SourcesManager() {
             </thead>
             <tbody>
               {loadingConnections ? (
-                <tr><td colSpan={6} className="px-4 py-3 text-xs text-zinc-500">Загрузка...</td></tr>
+                <tr><td colSpan={6} className="px-4 py-3 text-xs text-on-surface-variant/60">Загрузка...</td></tr>
               ) : connections.length === 0 ? (
-                <tr><td colSpan={6} className="px-4 py-4 text-xs text-zinc-500 text-center">Нет подключений</td></tr>
+                <tr><td colSpan={6} className="px-4 py-4 text-xs text-on-surface-variant/60 text-center">Нет подключений</td></tr>
               ) : (
                 connections.map(c => {
                   const usedBy = sourcesByConnection(c.id);
                   const isEditing = connEditor.open && connEditor.initial?.id === c.id;
                   return (
-                    <tr key={c.id} className={`border-t border-zinc-800/60 hover:bg-zinc-800/20 ${isEditing ? 'bg-zinc-800/30' : ''}`}>
-                      <td className="px-4 py-2.5 font-mono text-xs text-zinc-300">{c.id}</td>
-                      <td className="px-4 py-2.5 text-zinc-200">{c.name}</td>
-                      <td className="px-4 py-2.5 text-zinc-400 text-xs">{c.dialect}</td>
-                      <td className="px-4 py-2.5 font-mono text-xs text-zinc-400">{c.server}</td>
+                    <tr key={c.id} className={`border-t border-outline-variant/10 hover:bg-surface-container-low/50 ${isEditing ? 'bg-surface-container-low/50' : ''}`}>
+                      <td className="px-4 py-2.5 font-mono text-xs text-on-surface">{c.id}</td>
+                      <td className="px-4 py-2.5 text-on-surface">{c.name}</td>
+                      <td className="px-4 py-2.5 text-on-surface-variant text-xs">{c.dialect}</td>
+                      <td className="px-4 py-2.5 font-mono text-xs text-on-surface-variant">{c.server}</td>
                       <td className="px-4 py-2.5 text-right">
                         {usedBy.length > 0 ? (
-                          <span className="text-xs text-zinc-400" title={usedBy.join(', ')}>{usedBy.length} источн.</span>
+                          <span className="text-xs text-on-surface-variant" title={usedBy.join(', ')}>{usedBy.length} источн.</span>
                         ) : (
-                          <span className="text-xs text-zinc-600">—</span>
+                          <span className="text-xs text-on-surface-variant/60">—</span>
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-right">
@@ -190,14 +190,14 @@ export default function SourcesManager() {
                           <button
                             onClick={() => setConnEditor({ open: true, initial: c })}
                             disabled={connEditor.open}
-                            className="text-xs text-zinc-400 hover:text-zinc-200 disabled:opacity-40 transition-colors"
+                            className="text-xs text-primary hover:text-primary/70 disabled:opacity-40 transition-colors"
                           >
                             Изменить
                           </button>
                           <button
                             onClick={() => handleDeleteConnection(c.id)}
                             disabled={deletingConnId === c.id}
-                            className="text-xs text-red-500 hover:text-red-400 disabled:opacity-40 transition-colors"
+                            className="text-xs text-red-600 hover:text-red-500 disabled:opacity-40 transition-colors"
                           >
                             {deletingConnId === c.id ? 'Удаление...' : 'Удалить'}
                           </button>
@@ -218,15 +218,15 @@ export default function SourcesManager() {
       <section>
         <div className="flex items-center justify-between mb-3">
           <div>
-            <h2 className="text-base font-semibold text-zinc-200">Источники данных</h2>
-            <p className="text-xs text-zinc-500 mt-0.5">Каждый источник — набор таблиц из одного подключения. Агент работает со всеми источниками одновременно.</p>
+            <h2 className="text-base font-semibold text-on-surface">Источники данных</h2>
+            <p className="text-xs text-on-surface-variant mt-0.5">Каждый источник — набор таблиц из одного подключения. Агент работает со всеми источниками одновременно.</p>
           </div>
           {!sourceEditor.open && (
             <button
               onClick={() => setSourceEditor({ open: true })}
               disabled={connections.length === 0}
               title={connections.length === 0 ? 'Сначала создайте подключение' : undefined}
-              className="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-sm text-zinc-200 transition-colors flex-shrink-0"
+              className="ui-button-secondary rounded-lg px-3 py-1.5 text-sm flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               + Добавить
             </button>
@@ -240,11 +240,11 @@ export default function SourcesManager() {
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -4 }}
-              className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-5 mb-4"
+              className="ui-panel rounded-2xl p-5 mb-4"
             >
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-medium text-zinc-300">{sourceEditorTitle}</h3>
-                <button onClick={() => setSourceEditor({ open: false })} className="text-zinc-500 hover:text-zinc-300 text-lg leading-none">×</button>
+                <h3 className="text-sm font-medium text-on-surface">{sourceEditorTitle}</h3>
+                <button onClick={() => setSourceEditor({ open: false })} className="text-on-surface-variant/60 hover:text-on-surface text-lg leading-none">×</button>
               </div>
               <SourceEditor
                 connections={connections}
@@ -256,10 +256,10 @@ export default function SourcesManager() {
         </AnimatePresence>
 
         {/* Sources table */}
-        <div className="border border-zinc-800 rounded-xl overflow-hidden">
+        <div className="border border-outline-variant/15 rounded-xl overflow-hidden">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-zinc-800/50 text-zinc-400 text-xs">
+              <tr className="bg-surface-container text-on-surface-variant text-xs">
                 <th className="text-left px-4 py-2.5 font-medium">ID</th>
                 <th className="text-left px-4 py-2.5 font-medium">Название</th>
                 <th className="text-left px-4 py-2.5 font-medium">Подключение</th>
@@ -271,9 +271,9 @@ export default function SourcesManager() {
             </thead>
             <tbody>
               {loadingSources ? (
-                <tr><td colSpan={7} className="px-4 py-3 text-xs text-zinc-500">Загрузка...</td></tr>
+                <tr><td colSpan={7} className="px-4 py-3 text-xs text-on-surface-variant/60">Загрузка...</td></tr>
               ) : sources.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-4 text-xs text-zinc-500 text-center">Нет источников</td></tr>
+                <tr><td colSpan={7} className="px-4 py-4 text-xs text-on-surface-variant/60 text-center">Нет источников</td></tr>
               ) : (
                 sources.map(s => {
                   const mainTable = s.tables.find(t => t.columns.length > 0);
@@ -281,36 +281,36 @@ export default function SourcesManager() {
                   const conn = connections.find(c => c.id === s.connectionId);
                   const isEditing = sourceEditor.open && sourceEditor.initial?.id === s.id;
                   return (
-                    <tr key={s.id} className={`border-t border-zinc-800/60 hover:bg-zinc-800/20 ${isEditing ? 'bg-zinc-800/30' : ''}`}>
-                      <td className="px-4 py-2.5 font-mono text-xs text-zinc-300">{s.id}</td>
-                      <td className="px-4 py-2.5 text-zinc-200">{s.name}</td>
+                    <tr key={s.id} className={`border-t border-outline-variant/10 hover:bg-surface-container-low/50 ${isEditing ? 'bg-surface-container-low/50' : ''}`}>
+                      <td className="px-4 py-2.5 font-mono text-xs text-on-surface">{s.id}</td>
+                      <td className="px-4 py-2.5 text-on-surface">{s.name}</td>
                       <td className="px-4 py-2.5 text-xs">
                         {conn ? (
-                          <span className="text-zinc-400">{conn.name}</span>
+                          <span className="text-on-surface-variant">{conn.name}</span>
                         ) : s.connectionId ? (
-                          <span className="text-red-400">{s.connectionId} (не найдено)</span>
+                          <span className="text-red-600">{s.connectionId} (не найдено)</span>
                         ) : (
-                          <span className="text-zinc-500">(.env)</span>
+                          <span className="text-on-surface-variant/60">(.env)</span>
                         )}
                       </td>
-                      <td className="px-4 py-2.5 text-xs font-mono text-zinc-400">
-                        {s.database ?? <span className="text-zinc-600">—</span>}
+                      <td className="px-4 py-2.5 text-xs font-mono text-on-surface-variant">
+                        {s.database ?? <span className="text-on-surface-variant/60">—</span>}
                       </td>
-                      <td className="px-4 py-2.5 text-right text-zinc-400 tabular-nums">{s.tables.length}</td>
-                      <td className="px-4 py-2.5 text-right text-zinc-400 tabular-nums">{colCount}</td>
+                      <td className="px-4 py-2.5 text-right text-on-surface-variant tabular-nums">{s.tables.length}</td>
+                      <td className="px-4 py-2.5 text-right text-on-surface-variant tabular-nums">{colCount}</td>
                       <td className="px-4 py-2.5 text-right">
                         <div className="flex items-center justify-end gap-3">
                           <button
                             onClick={() => setSourceEditor({ open: true, initial: s })}
                             disabled={sourceEditor.open}
-                            className="text-xs text-zinc-400 hover:text-zinc-200 disabled:opacity-40 transition-colors"
+                            className="text-xs text-primary hover:text-primary/70 disabled:opacity-40 transition-colors"
                           >
                             Изменить
                           </button>
                           <button
                             onClick={() => handleDeleteSource(s.id)}
                             disabled={deletingSourceId === s.id}
-                            className="text-xs text-red-500 hover:text-red-400 disabled:opacity-40 transition-colors"
+                            className="text-xs text-red-600 hover:text-red-500 disabled:opacity-40 transition-colors"
                           >
                             {deletingSourceId === s.id ? 'Удаление...' : 'Удалить'}
                           </button>
@@ -326,8 +326,8 @@ export default function SourcesManager() {
       </section>
 
       {/* ── Info ─────────────────────────────────────────────────────── */}
-      <section className="bg-zinc-900/40 border border-zinc-800/60 rounded-xl p-4 text-xs text-zinc-500 space-y-1">
-        <p className="text-zinc-400 font-medium text-sm mb-2">Как это работает</p>
+      <section className="ui-panel rounded-xl p-4 text-xs text-on-surface-variant space-y-1">
+        <p className="text-on-surface font-medium text-sm mb-2">Как это работает</p>
         <p>1. Создайте подключение к БД и проверьте его кнопкой «Проверить подключение».</p>
         <p>2. Добавьте источник данных — выберите подключение и укажите список таблиц.</p>
         <p>3. AI сам подключится к БД, прочитает схему и расставит типы колонок и связи.</p>

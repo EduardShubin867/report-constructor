@@ -130,8 +130,8 @@ export default function SkillsManager() {
       <section>
         <div className="flex items-center justify-between mb-3">
           <div>
-            <h2 className="text-base font-semibold text-zinc-200">Текстовые инструкции</h2>
-            <p className="text-xs text-zinc-500 mt-0.5">
+            <h2 className="text-base font-semibold text-on-surface">Текстовые инструкции</h2>
+            <p className="text-xs text-on-surface-variant mt-0.5">
               Файлы в репозитории можно переопределить из админки (сохраняется в data/skills.json с тем же id). Сброс удаляет только переопределение.
             </p>
           </div>
@@ -139,7 +139,7 @@ export default function SkillsManager() {
             <button
               type="button"
               onClick={() => setEditor({ open: true })}
-              className="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-sm text-zinc-200 transition-colors flex-shrink-0"
+              className="ui-button-secondary rounded-lg px-3 py-1.5 text-sm flex-shrink-0"
             >
               + Добавить
             </button>
@@ -152,11 +152,11 @@ export default function SkillsManager() {
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -4 }}
-              className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-5 mb-4"
+              className="ui-panel rounded-2xl p-5 mb-4"
             >
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-medium text-zinc-300">{editorTitle}</h3>
-                <button type="button" onClick={() => setEditor({ open: false })} className="text-zinc-500 hover:text-zinc-300 text-lg leading-none">×</button>
+                <h3 className="text-sm font-medium text-on-surface">{editorTitle}</h3>
+                <button type="button" onClick={() => setEditor({ open: false })} className="text-on-surface-variant/60 hover:text-on-surface text-lg leading-none">×</button>
               </div>
               <SkillEditor
                 initial={editor.open && editor.initial ? itemToSkillForm(editor.initial) : undefined}
@@ -170,22 +170,22 @@ export default function SkillsManager() {
         </AnimatePresence>
 
         {error && (
-          <p className="text-xs text-red-400 mb-3">{error}</p>
+          <p className="text-xs text-red-600 mb-3">{error}</p>
         )}
 
         <div className="space-y-6">
           {loading ? (
-            <div className="border border-zinc-800 rounded-xl p-4 text-xs text-zinc-500">Загрузка...</div>
+            <div className="border border-outline-variant/15 rounded-xl p-4 text-xs text-on-surface-variant/60">Загрузка...</div>
           ) : items.length === 0 ? (
-            <div className="border border-zinc-800 rounded-xl p-4 text-xs text-zinc-500 text-center">Нет инструкций</div>
+            <div className="border border-outline-variant/15 rounded-xl p-4 text-xs text-on-surface-variant/60 text-center">Нет инструкций</div>
           ) : (
             allCategories.map(category => (
               <div key={category}>
-                <h3 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-2">{category}</h3>
-                <div className="border border-zinc-800 rounded-xl overflow-hidden">
+                <h3 className="text-xs font-medium text-on-surface-variant/60 uppercase tracking-wider mb-2">{category}</h3>
+                <div className="border border-outline-variant/15 rounded-xl overflow-hidden">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="bg-zinc-800/50 text-zinc-400 text-xs">
+                      <tr className="bg-surface-container text-on-surface-variant text-xs">
                         <th className="text-left px-4 py-2.5 font-medium">ID</th>
                         <th className="text-left px-4 py-2.5 font-medium">Название</th>
                         <th className="text-center px-4 py-2.5 font-medium">Источник</th>
@@ -202,15 +202,15 @@ export default function SkillsManager() {
                           ? (s.hasJsonOverride ? 'репозиторий + оверрайд' : 'репозиторий')
                           : 'админка';
                         return (
-                          <tr key={s.id} className={`border-t border-zinc-800/60 hover:bg-zinc-800/20 ${isEditing ? 'bg-zinc-800/30' : ''}`}>
-                            <td className="px-4 py-2.5 font-mono text-xs text-zinc-300">{s.id}</td>
-                            <td className="px-4 py-2.5 text-zinc-200">{s.name}</td>
-                            <td className="px-4 py-2.5 text-center text-xs text-zinc-500">
+                          <tr key={s.id} className={`border-t border-outline-variant/10 hover:bg-surface-container-low/50 ${isEditing ? 'bg-surface-container-low/50' : ''}`}>
+                            <td className="px-4 py-2.5 font-mono text-xs text-on-surface">{s.id}</td>
+                            <td className="px-4 py-2.5 text-on-surface">{s.name}</td>
+                            <td className="px-4 py-2.5 text-center text-xs text-on-surface-variant">
                               {sourceLabel}
                             </td>
                             <td className="px-4 py-2.5 text-center">
                               {isBuiltin && !s.hasJsonOverride ? (
-                                <span className="text-xs px-2 py-0.5 rounded border bg-green-900/40 text-green-400 border-green-800/50">
+                                <span className="text-xs px-2 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200">
                                   из файла
                                 </span>
                               ) : (
@@ -220,8 +220,8 @@ export default function SkillsManager() {
                                   disabled={isToggling}
                                   title={s.enabled ? 'Выключить' : 'Включить'}
                                   className={`text-xs px-2 py-0.5 rounded border transition-colors disabled:opacity-40 ${s.enabled
-                                    ? 'bg-green-900/40 text-green-400 border-green-800/50 hover:bg-green-900/70'
-                                    : 'bg-zinc-700/60 text-zinc-500 border-zinc-700 hover:bg-zinc-700'
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                                    : 'bg-surface-container text-on-surface-variant border-outline-variant/20 hover:bg-surface-container-high'
                                   }`}
                                 >
                                   {isToggling ? '...' : s.enabled ? 'включен' : 'выключен'}
@@ -237,7 +237,7 @@ export default function SkillsManager() {
                                     initial: s,
                                   })}
                                   disabled={editor.open}
-                                  className="text-xs text-zinc-400 hover:text-zinc-200 disabled:opacity-40 transition-colors"
+                                  className="text-xs text-primary hover:text-primary/70 disabled:opacity-40 transition-colors"
                                 >
                                   Изменить
                                 </button>
@@ -246,7 +246,7 @@ export default function SkillsManager() {
                                     type="button"
                                     onClick={() => handleDelete(s.id)}
                                     disabled={deletingId === s.id}
-                                    className="text-xs text-amber-500 hover:text-amber-400 disabled:opacity-40 transition-colors"
+                                    className="text-xs text-amber-700 hover:text-amber-600 disabled:opacity-40 transition-colors"
                                   >
                                     {deletingId === s.id ? '...' : 'Сбросить'}
                                   </button>
@@ -255,7 +255,7 @@ export default function SkillsManager() {
                                     type="button"
                                     onClick={() => handleDelete(s.id)}
                                     disabled={deletingId === s.id}
-                                    className="text-xs text-red-500 hover:text-red-400 disabled:opacity-40 transition-colors"
+                                    className="text-xs text-red-600 hover:text-red-500 disabled:opacity-40 transition-colors"
                                   >
                                     {deletingId === s.id ? 'Удаление...' : 'Удалить'}
                                   </button>
@@ -274,8 +274,8 @@ export default function SkillsManager() {
         </div>
       </section>
 
-      <section className="bg-zinc-900/40 border border-zinc-800/60 rounded-xl p-4 text-xs text-zinc-500 space-y-1">
-        <p className="text-zinc-400 font-medium text-sm mb-2">Как это работает</p>
+      <section className="ui-panel rounded-xl p-4 text-xs text-on-surface-variant space-y-1">
+        <p className="text-on-surface font-medium text-sm mb-2">Как это работает</p>
         <p>1. Встроенные инструкции лежат в lib/skills/instructions/*.md. Их можно изменить из админки — текст сохранится в data/skills.json с тем же id (переопределение).</p>
         <p>2. «Сбросить» у встроенной инструкции удаляет только переопределение; снова используется файл из репозитория.</p>
         <p>3. Если переопределение выключено (выкл), агент снова видит текст из .md.</p>

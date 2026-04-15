@@ -124,15 +124,17 @@ export default function ConnectionEditor({ initial, onSaved, onCancel }: Props) 
   const canTest = !!form.id && !!form.server;
   const canSave = !!form.id && !!form.name && !!form.server;
 
+  const inputClass = 'w-full border border-outline-variant/20 bg-white rounded-lg px-3 py-2 text-sm text-on-surface focus:outline-none focus:border-primary/30 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-surface-container';
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Left */}
         <div className="space-y-3">
           <label className="block">
-            <span className="text-xs text-zinc-400 mb-1 block">ID (slug)</span>
+            <span className="text-xs text-on-surface-variant mb-1 block">ID (slug)</span>
             <input
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-zinc-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              className={inputClass}
               placeholder="prod-mssql"
               value={form.id}
               onChange={e => setField('id', e.target.value)}
@@ -140,18 +142,18 @@ export default function ConnectionEditor({ initial, onSaved, onCancel }: Props) 
             />
           </label>
           <label className="block">
-            <span className="text-xs text-zinc-400 mb-1 block">Название</span>
+            <span className="text-xs text-on-surface-variant mb-1 block">Название</span>
             <input
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-zinc-500"
+              className={inputClass}
               placeholder="Продуктовая MSSQL"
               value={form.name}
               onChange={e => setField('name', e.target.value)}
             />
           </label>
           <label className="block">
-            <span className="text-xs text-zinc-400 mb-1 block">Диалект</span>
+            <span className="text-xs text-on-surface-variant mb-1 block">Диалект</span>
             <select
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-zinc-500"
+              className={inputClass}
               value={form.dialect}
               onChange={e => setField('dialect', e.target.value as typeof DIALECTS[number])}
             >
@@ -163,9 +165,9 @@ export default function ConnectionEditor({ initial, onSaved, onCancel }: Props) 
         {/* Right */}
         <div className="space-y-3">
           <label className="block">
-            <span className="text-xs text-zinc-400 mb-1 block">Сервер</span>
+            <span className="text-xs text-on-surface-variant mb-1 block">Сервер</span>
             <input
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-zinc-500 font-mono"
+              className={`${inputClass} font-mono`}
               placeholder="localhost\SQLEXPRESS"
               value={form.server}
               onChange={e => setField('server', e.target.value)}
@@ -173,22 +175,22 @@ export default function ConnectionEditor({ initial, onSaved, onCancel }: Props) 
           </label>
           <div className="grid grid-cols-2 gap-3">
             <label className="block">
-              <span className="text-xs text-zinc-400 mb-1 block">Пользователь</span>
+              <span className="text-xs text-on-surface-variant mb-1 block">Пользователь</span>
               <input
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-zinc-500"
+                className={inputClass}
                 value={form.user ?? ''}
                 onChange={e => setField('user', e.target.value)}
               />
             </label>
             <div>
-              <span className="text-xs text-zinc-400 mb-1 block">Пароль</span>
+              <span className="text-xs text-on-surface-variant mb-1 block">Пароль</span>
               {passwordMode === 'keep' ? (
                 <div className="flex items-center gap-2 h-9">
-                  <span className="text-sm text-zinc-500 font-mono tracking-widest select-none">••••••••</span>
+                  <span className="text-sm text-on-surface-variant/60 font-mono tracking-widest select-none">••••••••</span>
                   <button
                     type="button"
                     onClick={() => { setPasswordMode('replace'); setNewPassword(''); setTestState({ status: 'idle' }); }}
-                    className="text-xs text-zinc-400 hover:text-zinc-200 underline underline-offset-2 transition-colors"
+                    className="text-xs text-on-surface-variant hover:text-on-surface underline underline-offset-2 transition-colors"
                   >
                     Заменить
                   </button>
@@ -198,7 +200,7 @@ export default function ConnectionEditor({ initial, onSaved, onCancel }: Props) 
                   <input
                     type="password"
                     autoFocus={isEdit}
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-zinc-500"
+                    className={inputClass}
                     placeholder={isEdit ? 'Новый пароль' : ''}
                     value={newPassword}
                     onChange={e => { setNewPassword(e.target.value); setTestState({ status: 'idle' }); }}
@@ -207,7 +209,7 @@ export default function ConnectionEditor({ initial, onSaved, onCancel }: Props) 
                     <button
                       type="button"
                       onClick={() => { setPasswordMode('keep'); setNewPassword(''); }}
-                      className="text-zinc-500 hover:text-zinc-300 text-lg leading-none flex-shrink-0"
+                      className="text-on-surface-variant/60 hover:text-on-surface text-lg leading-none flex-shrink-0"
                       title="Отмена"
                     >
                       ×
@@ -218,9 +220,9 @@ export default function ConnectionEditor({ initial, onSaved, onCancel }: Props) 
             </div>
           </div>
           <label className="block">
-            <span className="text-xs text-zinc-400 mb-1 block">Порт (опционально)</span>
+            <span className="text-xs text-on-surface-variant mb-1 block">Порт (опционально)</span>
             <input
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-zinc-500"
+              className={inputClass}
               placeholder="1433"
               value={form.port ?? ''}
               onChange={e => setField('port', e.target.value ? Number(e.target.value) as unknown as undefined : undefined)}
@@ -233,14 +235,14 @@ export default function ConnectionEditor({ initial, onSaved, onCancel }: Props) 
       <AnimatePresence>
         {testState.status === 'ok' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="flex items-center gap-2 text-sm text-emerald-400">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />
+            className="flex items-center gap-2 text-sm text-emerald-700">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
             Подключено за {testState.latencyMs} мс
           </motion.div>
         )}
         {testState.status === 'error' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="bg-red-950/60 border border-red-800 rounded-lg px-3 py-2 text-xs text-red-300">
+            className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-600">
             {testState.message}
           </motion.div>
         )}
@@ -250,7 +252,7 @@ export default function ConnectionEditor({ initial, onSaved, onCancel }: Props) 
       <AnimatePresence>
         {error && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="bg-red-950/60 border border-red-800 rounded-lg px-3 py-2 text-xs text-red-300">
+            className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-600">
             {error}
           </motion.div>
         )}
@@ -261,24 +263,24 @@ export default function ConnectionEditor({ initial, onSaved, onCancel }: Props) 
         <button
           onClick={handleTest}
           disabled={!canTest || testState.status === 'testing'}
-          className="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-sm text-zinc-200 transition-colors"
+          className="ui-button-secondary rounded-lg px-3 py-1.5 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {testState.status === 'testing' ? (
             <span className="flex items-center gap-1.5">
-              <span className="inline-block w-3 h-3 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin" />
+              <span className="inline-block w-3 h-3 border-2 border-on-surface-variant border-t-transparent rounded-full animate-spin" />
               Проверка...
             </span>
           ) : 'Проверить подключение'}
         </button>
 
         <div className="ml-auto flex items-center gap-2">
-          <button onClick={onCancel} className="px-3 py-1.5 text-sm text-zinc-400 hover:text-zinc-200 transition-colors">
+          <button onClick={onCancel} className="px-3 py-1.5 text-sm text-on-surface-variant hover:text-on-surface transition-colors">
             Отмена
           </button>
           <button
             onClick={handleSave}
             disabled={!canSave || saving}
-            className="px-4 py-1.5 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 rounded-lg text-sm text-white transition-colors"
+            className="ui-button-primary rounded-lg px-4 py-1.5 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {saving ? 'Сохранение...' : isEdit ? 'Сохранить изменения' : 'Сохранить'}
           </button>

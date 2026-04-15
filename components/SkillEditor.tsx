@@ -39,9 +39,9 @@ function TagSelector({
   if (options.length === 0) return null;
   return (
     <div>
-      <label className="block text-xs text-zinc-400 mb-1">
+      <label className="block text-xs text-on-surface-variant mb-1">
         {label}
-        <span className="ml-1 text-zinc-600">(опционально)</span>
+        <span className="ml-1 text-on-surface-variant/60">(опционально)</span>
       </label>
       <div className="flex flex-wrap gap-1.5">
         {options.map(o => {
@@ -55,8 +55,8 @@ function TagSelector({
               disabled={disabled}
               className={`px-2.5 py-1 rounded-md text-xs border transition-colors disabled:opacity-40 disabled:pointer-events-none ${
                 active
-                  ? 'bg-zinc-600 border-zinc-500 text-zinc-100'
-                  : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-600 hover:text-zinc-300'
+                  ? 'bg-primary/10 border-primary/30 text-primary'
+                  : 'bg-surface-container border-outline-variant/20 text-on-surface-variant hover:border-outline-variant/30 hover:text-on-surface'
               }`}
             >
               {getLabel(o)}
@@ -64,7 +64,7 @@ function TagSelector({
           );
         })}
       </div>
-      <p className="text-xs text-zinc-600 mt-1">{hint}</p>
+      <p className="text-xs text-on-surface-variant/60 mt-1">{hint}</p>
     </div>
   );
 }
@@ -151,31 +151,31 @@ export default function SkillEditor({
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {error && (
-        <div className="bg-red-950/60 border border-red-800 rounded-lg px-3 py-2 text-sm text-red-300">
+        <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-600">
           {error}
         </div>
       )}
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-xs text-zinc-400 mb-1">ID <span className="text-red-500">*</span></label>
+          <label className="block text-xs text-on-surface-variant mb-1">ID <span className="text-red-500">*</span></label>
           <input
             type="text"
             value={id}
             onChange={e => setId(e.target.value)}
             onBlur={() => !id && generateIdFromName()}
-            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-zinc-600 disabled:opacity-60"
+            className="w-full border border-outline-variant/20 bg-white rounded-lg px-3 py-2 text-sm text-on-surface focus:outline-none focus:border-primary/30 disabled:opacity-60 disabled:bg-surface-container"
             placeholder="krm-krp-analysis"
             disabled={!!initial || readOnly}
           />
         </div>
         <div>
-          <label className="block text-xs text-zinc-400 mb-1">Название <span className="text-red-500">*</span></label>
+          <label className="block text-xs text-on-surface-variant mb-1">Название <span className="text-red-500">*</span></label>
           <input
             type="text"
             value={name}
             onChange={e => setName(e.target.value)}
-            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-zinc-600 disabled:opacity-60"
+            className="w-full border border-outline-variant/20 bg-white rounded-lg px-3 py-2 text-sm text-on-surface focus:outline-none focus:border-primary/30 disabled:opacity-60 disabled:bg-surface-container"
             placeholder="Анализ КРМ/КРП"
             disabled={readOnly}
           />
@@ -184,23 +184,23 @@ export default function SkillEditor({
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-xs text-zinc-400 mb-1">Категория</label>
+          <label className="block text-xs text-on-surface-variant mb-1">Категория</label>
           <input
             type="text"
             value={category}
             onChange={e => setCategory(e.target.value)}
-            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-zinc-600 disabled:opacity-60"
+            className="w-full border border-outline-variant/20 bg-white rounded-lg px-3 py-2 text-sm text-on-surface focus:outline-none focus:border-primary/30 disabled:opacity-60 disabled:bg-surface-container"
             placeholder="analytics"
             disabled={readOnly}
           />
         </div>
         <div className="flex items-end">
-          <label className="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer">
+          <label className="flex items-center gap-2 text-sm text-on-surface cursor-pointer">
             <input
               type="checkbox"
               checked={enabled}
               onChange={e => setEnabled(e.target.checked)}
-              className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-zinc-200 focus:ring-zinc-600 disabled:opacity-60"
+              className="w-4 h-4 rounded border-outline-variant/20 text-primary focus:ring-primary/30 disabled:opacity-60"
               disabled={readOnly}
             />
             Включен
@@ -231,25 +231,25 @@ export default function SkillEditor({
       />
 
       <div>
-        <label className="block text-xs text-zinc-400 mb-1">Инструкция <span className="text-red-500">*</span></label>
+        <label className="block text-xs text-on-surface-variant mb-1">Инструкция <span className="text-red-500">*</span></label>
         <textarea
           ref={textareaRef}
           value={instruction}
           onChange={e => setInstruction(e.target.value)}
           rows={6}
-          className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-zinc-600 resize-none font-mono disabled:opacity-60"
+          className="w-full border border-outline-variant/20 bg-white rounded-lg px-3 py-2 text-sm text-on-surface focus:outline-none focus:border-primary/30 resize-none font-mono disabled:opacity-60 disabled:bg-surface-container"
           placeholder="Опишите здесь инструкцию для агента..."
           disabled={readOnly}
           readOnly={readOnly}
         />
-        <p className="text-xs text-zinc-500 mt-1">Используйте Markdown для форматирования</p>
+        <p className="text-xs text-on-surface-variant/60 mt-1">Используйте Markdown для форматирования</p>
       </div>
 
       <div className="flex items-center justify-end gap-3 pt-2">
         <button
           type="button"
           onClick={onCancel}
-          className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
+          className="px-4 py-2 text-sm text-on-surface-variant hover:text-on-surface transition-colors"
           disabled={saving}
         >
           {readOnly ? 'Закрыть' : 'Отмена'}
@@ -258,7 +258,7 @@ export default function SkillEditor({
           <button
             type="submit"
             disabled={saving}
-            className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-sm text-zinc-200 transition-colors"
+            className="ui-button-secondary rounded-lg px-4 py-2 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {saving ? 'Сохранение...' : 'Сохранить'}
           </button>

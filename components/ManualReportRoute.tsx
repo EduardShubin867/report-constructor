@@ -561,6 +561,24 @@ export default function ManualReportRoute({
           ) : null}
         </AnimatePresence>
 
+        {sources.length > 1 && (
+          <div className="flex gap-1 self-start rounded-xl bg-surface-container-low p-1">
+            {sources.map(s => (
+              <button
+                key={s.id}
+                onClick={() => setSelectedSourceId(s.id)}
+                className={`rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
+                  s.id === selectedSourceId
+                    ? 'ui-chip-accent text-primary shadow-none'
+                    : 'text-on-surface-variant hover:bg-surface-container-low/80 hover:text-on-surface'
+                }`}
+              >
+                {s.name}
+              </button>
+            ))}
+          </div>
+        )}
+
         <header className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <div className="mb-3 flex flex-wrap gap-2">
@@ -590,20 +608,6 @@ export default function ManualReportRoute({
             </p>
           </div>
 
-          {sources.length > 1 ? (
-            <label className="block min-w-[18rem]">
-              <span className="mb-2 block text-sm font-medium text-on-surface">Набор данных</span>
-              <select
-                value={selectedSourceId}
-                onChange={e => setSelectedSourceId(e.target.value)}
-                className="ui-field w-full rounded-xl px-3 py-2.5 text-sm"
-              >
-                {sources.map(s => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
-            </label>
-          ) : null}
         </header>
 
         <div className="grid gap-5 2xl:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)]">
@@ -724,11 +728,16 @@ export default function ManualReportRoute({
                     Таблица
                   </span>
                   <span className="ui-chip inline-flex items-center rounded-full px-3 py-1 text-xs font-medium">
-                    {selectedColumns.length > 0 ? `${selectedColumns.length} колонок в черновике` : 'Колонки ещё не выбраны'}
+                    {selectedColumns.length > 0 ? `${tableColumns.length} колонок в черновике` : 'Колонки ещё не выбраны'}
                   </span>
                   {groupBy.length > 0 ? (
                     <span className="ui-chip inline-flex items-center rounded-full px-3 py-1 text-xs font-medium">
                       Есть группировка
+                    </span>
+                  ) : null}
+                  {groupBy.length > 0 && selectedColumns.length > tableColumns.length ? (
+                    <span className="ui-chip inline-flex items-center rounded-full px-3 py-1 text-xs font-medium text-on-surface-variant/70">
+                      {selectedColumns.length - tableColumns.length} колонок скрыто группировкой
                     </span>
                   ) : null}
                 </div>

@@ -44,7 +44,7 @@ async function queryInformationSchema(
   database: string,
   schemaName: string,
   tables: string[],
-): Promise<{ columns: ColumnInfo[]; fks: FkInfo[]; log: string[] }> {
+): Promise<{ columns: ColumnInfo[]; fks: FkInfo[]; allTables: Set<string>; log: string[] }> {
   const log: string[] = [];
 
   const config: sql.config = {
@@ -129,7 +129,19 @@ async function queryInformationSchema(
     }));
     log.push(`Найдено ${fks.length} внешних ключей.`);
 
-    return { columns, fks, log };
+    // Query all tables in the schema (ground truth for LLM-guard)
+    log.push('Получение списка всех таблиц схемы...');
+    const tblReq = pool.request();
+    tblReq.input('schemaAll', schemaName);
+    const tblResult = await tblReq.query<{ TABLE_NAME: string }>(`
+      SELECT TABLE_NAME
+      FROM INFORMATION_SCHEMA.TABLES
+      WHERE TABLE_SCHEMA = @schemaAll AND TABLE_TYPE = 'BASE TABLE'
+    `);
+    const allTables = new Set(tblResult.recordset.map(r => r.TABLE_NAME));
+    log.push(`Найдено ${allTables.size} таблиц в схеме.`);
+
+    return { columns, fks, allTables, log };
   } finally {
     await pool.close().catch(() => {});
   }
@@ -262,7 +274,7 @@ export async function POST(request: NextRequest) {
 
   try {
     // Step 1: query DB
-    const { columns, fks, log: dbLog } = await queryInformationSchema(conn, database, schema, tables);
+    const { columns, fks, allTables, log: dbLog } = await queryInformationSchema(conn, database, schema, tables);
     log.push(...dbLog);
 
     if (columns.length === 0) {
@@ -302,15 +314,15 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Validate LLM output against ground truth from INFORMATION_SCHEMA ────
-    const knownTables = new Set(tables);
+    // allTables = all tables existing in DB schema (not just the requested ones)
     const knownColumns = new Set(columns.map(c => `${c.tableName}.${c.columnName}`));
     const VALID_TYPES = new Set<string>(['number', 'string', 'date', 'bit']);
-    const SAFE_JOIN_RE = /^(LEFT\s+|INNER\s+|RIGHT\s+)?JOIN\s+\[?\w[\w\u0400-\u04FF]*\]?\s*\.\s*\[?\w[\w\u0400-\u04FF ]*\]?\s+AS\s+\w+\s+ON\s+[\w\u0400-\u04FF\[\]._\s=]+$/i;
+    const SAFE_JOIN_RE = /^(LEFT\s+|INNER\s+|RIGHT\s+)?JOIN\s+\[?[\w\u0400-\u04FF][\w\u0400-\u04FF]*\]?\s*\.\s*\[?[\w\u0400-\u04FF][\w\u0400-\u04FF ]*\]?\s+AS\s+\w+\s+ON\s+[\w\u0400-\u04FF\[\]._\s=]+$/i;
 
     const sanitizedTables = source.tables
       .filter(t => {
-        if (!knownTables.has(t.name)) {
-          log.push(`[LLM-guard] Отброшена выдуманная таблица: ${t.name}`);
+        if (!allTables.has(t.name)) {
+          log.push(`[LLM-guard] Отброшена несуществующая таблица: ${t.name}`);
           return false;
         }
         return true;
