@@ -1,3 +1,5 @@
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
 import type { DataSource, TableSchema } from '@/lib/schema/types';
 import SourceColumnsTable, {
@@ -47,14 +49,17 @@ export default function SourceEditorReview({
               {mainTable.columns.length} колонок
             </span>
 
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="xs"
               onClick={onToggleManualReport}
-              className={`flex items-center gap-1.5 rounded border px-2.5 py-1 text-xs transition-colors ${
+              className={cn(
+                'h-auto min-h-0 gap-1.5 rounded border px-2.5 py-1 text-xs font-normal transition-colors',
                 source.manualReport
                   ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                  : 'border-outline-variant/20 bg-surface-container-lowest text-on-surface-variant hover:border-outline-variant/40 hover:bg-surface-container-low hover:text-on-surface'
-              }`}
+                  : 'border-outline-variant/20 bg-surface-container-lowest text-on-surface-variant hover:border-outline-variant/40 hover:bg-surface-container-low hover:text-on-surface',
+              )}
             >
               <span
                 className={`flex h-3 w-3 flex-shrink-0 items-center justify-center rounded border ${
@@ -66,14 +71,18 @@ export default function SourceEditorReview({
                 {source.manualReport && <span className="text-[8px] leading-none">✓</span>}
               </span>
               Доступен в ручном отчёте
-            </button>
+            </Button>
 
             {isEdit && (
-              <button
+              <Button
                 type="button"
+                variant="outline"
+                size="xs"
                 onClick={() => onRescan(mainTable.name)}
                 disabled={rescanningTable === mainTable.name}
-                className="ml-auto flex items-center gap-1.5 rounded border border-primary/12 bg-primary-fixed/70 px-2.5 py-1 text-xs text-on-primary-fixed-variant transition-colors hover:bg-primary-fixed disabled:cursor-not-allowed disabled:opacity-40"
+                className={cn(
+                  'ml-auto h-auto min-h-0 gap-1.5 rounded border border-primary/12 bg-primary-fixed/70 px-2.5 py-1 text-xs font-normal text-on-primary-fixed-variant transition-colors hover:bg-primary-fixed disabled:cursor-not-allowed disabled:opacity-40',
+                )}
               >
                 {rescanningTable === mainTable.name ? (
                   <>
@@ -83,7 +92,7 @@ export default function SourceEditorReview({
                 ) : (
                   'Пересканировать'
                 )}
-              </button>
+              </Button>
             )}
           </div>
 

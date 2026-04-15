@@ -1,6 +1,7 @@
 'use client';
 
 import { FileSpreadsheet, FileText } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ColumnSelector from '@/components/ColumnSelector';
@@ -13,6 +14,7 @@ import type { FilterDef, ManualReportSourcePayload, SourceFilterOptions } from '
 import { BASE_PATH } from '@/lib/constants';
 
 type ManualSortState = { col: string | null; dir: 'asc' | 'desc' | null };
+const SOURCE_QUERY_PARAM = 'sourceId';
 
 /** Снимок последнего успешного запроса: таблица и пагинация не следуют за черновиком формы. */
 type AppliedReportSnapshot = {
@@ -95,9 +97,14 @@ export default function ManualReportRoute({
   sources = [],
   initialBootstrapBySourceId,
 }: ManualReportRouteProps) {
+  const searchParams = useSearchParams();
   const bootstrapById = coerceBootstrapMap(initialBootstrapBySourceId);
-  const boot0 = bootstrapById[initialSourceId] ?? emptyBootstrap;
-  const [selectedSourceId, setSelectedSourceId] = useState(initialSourceId);
+  const defaultSourceId = sources[0]?.id ?? '';
+  const normalizedInitialSourceId = sources.some(source => source.id === initialSourceId)
+    ? initialSourceId
+    : defaultSourceId;
+  const boot0 = bootstrapById[normalizedInitialSourceId] ?? emptyBootstrap;
+  const [selectedSourceId, setSelectedSourceId] = useState(normalizedInitialSourceId);
   const [filterOptions, setFilterOptions] = useState<SourceFilterOptions>(() =>
     normalizeFilterOptions(boot0.filterOptions),
   );
@@ -144,6 +151,33 @@ export default function ManualReportRoute({
   const canSubmitDraft = selectedColumns.length > 0 && !loading;
 
   const isFirstSourceChange = useRef(true);
+  const lastInitialSourceIdRef = useRef(normalizedInitialSourceId);
+
+  useEffect(() => {
+    if (lastInitialSourceIdRef.current === normalizedInitialSourceId) return;
+    lastInitialSourceIdRef.current = normalizedInitialSourceId;
+    setSelectedSourceId(normalizedInitialSourceId);
+  }, [normalizedInitialSourceId]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    const currentQuery = searchParams.toString();
+    const currentPath = window.location.pathname;
+
+    if (selectedSourceId && selectedSourceId !== defaultSourceId) {
+      params.set(SOURCE_QUERY_PARAM, selectedSourceId);
+    } else {
+      params.delete(SOURCE_QUERY_PARAM);
+    }
+
+    const nextQuery = params.toString();
+    const nextUrl = nextQuery ? `${currentPath}?${nextQuery}` : currentPath;
+    const currentUrl = currentQuery ? `${currentPath}?${currentQuery}` : currentPath;
+
+    if (nextUrl !== currentUrl) {
+      window.history.replaceState(null, '', nextUrl);
+    }
+  }, [defaultSourceId, searchParams, selectedSourceId]);
 
   // Reset form state when source changes; apply server-prefetched columns + filters from props.
   useEffect(() => {

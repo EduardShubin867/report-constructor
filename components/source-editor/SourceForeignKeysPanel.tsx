@@ -1,3 +1,5 @@
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import type {
   DataSource,
   ForeignKey,
@@ -108,20 +110,24 @@ export default function SourceForeignKeysPanel({
                         Группировка по справочнику
                       </p>
                       <div className="flex flex-wrap gap-1.5">
-                        <button
+                        <Button
                           type="button"
+                          variant="outline"
+                          size="xs"
                           onClick={() => onSetFkGroupByPreset(tableIdx, fkIdx, 'all')}
-                          className="rounded-md border border-outline-variant/30 bg-surface-container px-2 py-0.5 text-[10px] font-medium text-on-surface hover:border-outline-variant"
+                          className="h-auto min-h-0 rounded-md border-outline-variant/30 bg-surface-container px-2 py-0.5 text-[10px] font-medium text-on-surface hover:border-outline-variant"
                         >
                           Все поля
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           type="button"
+                          variant="outline"
+                          size="xs"
                           onClick={() => onSetFkGroupByPreset(tableIdx, fkIdx, 'none')}
-                          className="rounded-md border border-outline-variant/30 bg-surface-container px-2 py-0.5 text-[10px] font-medium text-on-surface hover:border-outline-variant"
+                          className="h-auto min-h-0 rounded-md border-outline-variant/30 bg-surface-container px-2 py-0.5 text-[10px] font-medium text-on-surface hover:border-outline-variant"
                         >
                           Ни одного
-                        </button>
+                        </Button>
                       </div>
                     </div>
 
@@ -155,13 +161,15 @@ export default function SourceForeignKeysPanel({
                       Добавьте фильтр, если нужен выпадающий список по этому справочнику в ручном
                       отчёте.
                     </p>
-                    <button
+                    <Button
                       type="button"
+                      variant="outline"
+                      size="sm"
                       onClick={() => onAddFkFilter(tableIdx, fkIdx)}
-                      className="shrink-0 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100"
+                      className="h-auto min-h-0 shrink-0 rounded-lg border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
                     >
                       Добавить фильтр...
-                    </button>
+                    </Button>
                   </div>
                 ) : (
                   <>
@@ -183,53 +191,64 @@ export default function SourceForeignKeysPanel({
                           Блок в отчёте
                         </span>
                         <div className="flex rounded-lg border border-outline-variant/30 p-0.5">
-                          <button
+                          <Button
                             type="button"
+                            variant="ghost"
+                            size="xs"
                             title="Показывать в основном блоке «Самое важное»"
                             onClick={() => onSetFkFilterTier(tableIdx, fkIdx, 'primary')}
-                            className={`rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${
+                            className={cn(
+                              'h-auto min-h-0 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-transparent',
                               (foreignKey.filterTier ?? 'primary') === 'primary'
-                                ? 'bg-emerald-600 text-white'
-                                : 'text-on-surface-variant hover:text-on-surface'
-                            }`}
+                                ? 'bg-emerald-600 text-white hover:bg-emerald-600'
+                                : 'text-on-surface-variant hover:text-on-surface',
+                            )}
                           >
                             Основной
-                          </button>
-                          <button
+                          </Button>
+                          <Button
                             type="button"
+                            variant="ghost"
+                            size="xs"
                             title="Показывать в блоке «Остальные фильтры»"
                             onClick={() => onSetFkFilterTier(tableIdx, fkIdx, 'secondary')}
-                            className={`rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${
+                            className={cn(
+                              'h-auto min-h-0 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-transparent',
                               foreignKey.filterTier === 'secondary'
-                                ? 'bg-teal-700 text-white'
-                                : 'text-on-surface-variant hover:text-on-surface'
-                            }`}
+                                ? 'bg-teal-700 text-white hover:bg-teal-700'
+                                : 'text-on-surface-variant hover:text-on-surface',
+                            )}
                           >
                             Дополнительный
-                          </button>
+                          </Button>
                         </div>
                       </div>
                     </div>
 
                     <div className="mt-2 flex flex-wrap gap-2">
-                      <button
+                      <Button
                         type="button"
+                        variant="outline"
+                        size="sm"
                         onClick={() => onSetFkFilterPanelOpen(tableIdx, fkIdx, !isOpen)}
-                        className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                        className={cn(
+                          'h-auto min-h-0 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors',
                           isOpen
-                            ? 'border-amber-200 bg-amber-50 text-amber-700'
-                            : 'border-outline-variant/30 bg-surface-container text-on-surface hover:border-outline-variant'
-                        }`}
+                            ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'
+                            : 'border-outline-variant/30 bg-surface-container text-on-surface hover:border-outline-variant',
+                        )}
                       >
                         {isOpen ? 'Свернуть настройки' : 'Изменить поля'}
-                      </button>
-                      <button
+                      </Button>
+                      <Button
                         type="button"
+                        variant="outline"
+                        size="sm"
                         onClick={() => onRemoveFkFilter(tableIdx, fkIdx)}
-                        className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-100"
+                        className="h-auto min-h-0 rounded-lg border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-100"
                       >
                         Убрать фильтр
-                      </button>
+                      </Button>
                     </div>
 
                     {isOpen && (

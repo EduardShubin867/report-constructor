@@ -7,6 +7,11 @@ import { getManualReportSources } from '@/lib/schema';
 import { getVisibleColumnDefs, getGroupByColumnDefs } from '@/lib/visible-columns';
 
 export const metadata: Metadata = { title: 'Конструктор — Отчёты' };
+const SOURCE_QUERY_PARAM = 'sourceId';
+
+interface ReportsManualPageProps {
+  searchParams?: Promise<{ sourceId?: string | string[] | undefined }>;
+}
 
 async function bootstrapManualSource(id: string): Promise<ManualReportSourcePayload> {
   return {
@@ -16,9 +21,17 @@ async function bootstrapManualSource(id: string): Promise<ManualReportSourcePayl
   };
 }
 
-export default async function ReportsManualPage() {
+export default async function ReportsManualPage({ searchParams }: ReportsManualPageProps) {
   const sources = getManualReportSources().map(s => ({ id: s.id, name: s.name }));
   const defaultSourceId = sources[0]?.id ?? '';
+  const resolvedSearchParams = (await searchParams) ?? {};
+  const requestedSourceIdRaw = resolvedSearchParams[SOURCE_QUERY_PARAM];
+  const requestedSourceId = Array.isArray(requestedSourceIdRaw)
+    ? requestedSourceIdRaw[0]
+    : requestedSourceIdRaw;
+  const initialSourceId = sources.some(source => source.id === requestedSourceId)
+    ? requestedSourceId
+    : defaultSourceId;
 
   const payloads = await Promise.all(sources.map(async ({ id }) => [id, await bootstrapManualSource(id)] as const));
   const initialBootstrapBySourceId: Record<string, ManualReportSourcePayload> =
@@ -26,7 +39,7 @@ export default async function ReportsManualPage() {
 
   return (
     <ManualReportRoute
-      initialSourceId={defaultSourceId}
+      initialSourceId={initialSourceId}
       sources={sources}
       initialBootstrapBySourceId={initialBootstrapBySourceId}
     />

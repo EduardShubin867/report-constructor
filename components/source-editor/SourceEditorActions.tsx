@@ -1,3 +1,6 @@
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+
 import type { SourceEditorPhase } from './types';
 
 interface SourceEditorActionsProps {
@@ -20,11 +23,14 @@ export default function SourceEditorActions({
   return (
     <div className="flex items-center gap-3">
       {(phase === 'idle' || phase === 'introspecting') && (
-        <button
+        <Button
           type="button"
           onClick={onIntrospect}
           disabled={phase === 'introspecting' || !canIntrospect}
-          className="ui-button-secondary rounded-lg disabled:cursor-not-allowed disabled:opacity-40"
+          variant="outline"
+          className={cn(
+            'ui-button-secondary rounded-lg disabled:cursor-not-allowed disabled:opacity-40',
+          )}
         >
           {phase === 'introspecting' ? (
             <span className="flex items-center gap-2">
@@ -34,41 +40,49 @@ export default function SourceEditorActions({
           ) : (
             'Интроспектировать с AI'
           )}
-        </button>
+        </Button>
       )}
 
       {phase === 'review' && (
         <>
-          <button type="button" onClick={onBackToForm} className="ui-button-secondary rounded-lg">
+          <Button
+            type="button"
+            onClick={onBackToForm}
+            variant="outline"
+            className="ui-button-secondary rounded-lg"
+          >
             Назад
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
             onClick={onIntrospect}
             disabled={!canIntrospect}
-            className="ui-button-secondary rounded-lg disabled:cursor-not-allowed disabled:opacity-40"
+            variant="outline"
+            className={cn(
+              'ui-button-secondary rounded-lg disabled:cursor-not-allowed disabled:opacity-40',
+            )}
           >
             Повторить интроспекцию
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
             onClick={onSave}
-            className="rounded-lg bg-emerald-700 px-4 py-2 text-sm text-white transition-colors hover:bg-emerald-600"
+            className="border-transparent bg-emerald-700 text-white hover:bg-emerald-600"
           >
             Сохранить источник
-          </button>
+          </Button>
         </>
       )}
 
       {phase === 'saving' && (
-        <button
+        <Button
           type="button"
           disabled
-          className="flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-sm text-white opacity-60"
+          className="flex items-center gap-2 border-transparent bg-emerald-700 text-white opacity-60"
         >
           <span className="inline-block h-3 w-3 rounded-full border-2 border-white border-t-transparent animate-spin" />
           Сохранение...
-        </button>
+        </Button>
       )}
     </div>
   );

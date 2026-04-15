@@ -1,3 +1,5 @@
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import type { DataSource, TableSchema } from '@/lib/schema/types';
 import SourceFilterTierCellButton from './ui/SourceFilterTierCellButton';
 import SourceMiniLinkButton from './ui/SourceMiniLinkButton';
@@ -159,52 +161,61 @@ export default function SourceColumnsTable({
                 </td>
                 <td className="px-3 py-1.5 text-center">
                   {canGroupable ? (
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="xs"
                       onClick={() => onToggleGroupable(tableIdx, colIdx)}
-                      className={`mx-auto flex h-4 w-4 items-center justify-center rounded border text-xs transition-colors ${
+                      className={cn(
+                        'mx-auto flex h-4 w-4 min-h-0 items-center justify-center gap-0 rounded border p-0 text-xs transition-colors hover:bg-transparent',
                         column.groupable
-                          ? 'border-violet-500 bg-violet-600 text-white'
-                          : 'border-outline-variant/40 text-transparent hover:border-outline-variant'
-                      }`}
+                          ? 'border-violet-500 bg-violet-600 text-white hover:bg-violet-600'
+                          : 'border-outline-variant/40 text-transparent hover:border-outline-variant',
+                      )}
                     >
                       ✓
-                    </button>
+                    </Button>
                   ) : (
                     <span className="mx-auto inline-block h-4 w-4 text-outline-variant">·</span>
                   )}
                 </td>
                 <td className="px-3 py-1.5 text-center">
                   {canPeriodFilter ? (
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="xs"
                       onClick={() => onTogglePeriodFilter(tableIdx, colIdx)}
-                      className={`mx-auto flex h-4 w-4 items-center justify-center rounded-full border text-xs transition-colors ${
+                      className={cn(
+                        'mx-auto flex h-4 w-4 min-h-0 items-center justify-center gap-0 rounded-full border p-0 text-xs transition-colors hover:bg-transparent',
                         column.periodFilter
-                          ? 'border-yellow-500 bg-yellow-600 text-white'
-                          : 'border-outline-variant/40 hover:border-outline-variant'
-                      }`}
+                          ? 'border-yellow-500 bg-yellow-600 text-white hover:bg-yellow-600'
+                          : 'border-outline-variant/40 hover:border-outline-variant',
+                      )}
                     >
                       {column.periodFilter && (
                         <span className="block h-2 w-2 rounded-full bg-white" />
                       )}
-                    </button>
+                    </Button>
                   ) : (
                     <span className="mx-auto inline-block h-4 w-4 text-outline-variant">·</span>
                   )}
                 </td>
                 <td className="px-3 py-1.5 text-center">
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="xs"
                     onClick={() => onToggleHidden(tableIdx, colIdx)}
-                    className={`mx-auto flex h-4 w-4 items-center justify-center rounded border text-xs transition-colors ${
+                    className={cn(
+                      'mx-auto flex h-4 w-4 min-h-0 items-center justify-center gap-0 rounded border p-0 text-xs transition-colors hover:bg-transparent',
                       !column.hidden
-                        ? 'border-blue-500 bg-blue-600 text-white'
-                        : 'border-outline-variant/40 text-transparent hover:border-outline-variant'
-                    }`}
+                        ? 'border-blue-500 bg-blue-600 text-white hover:bg-blue-600'
+                        : 'border-outline-variant/40 text-transparent hover:border-outline-variant',
+                    )}
                   >
                     ✓
-                  </button>
+                  </Button>
                 </td>
               </tr>
             );

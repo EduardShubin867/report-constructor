@@ -159,6 +159,48 @@ In-memory TTL-кэш (60s, max 50 entries). Устраняет двойное в
 - `validate_query` (скилл агента) выполняет SQL и кладёт результат в кэш
 - `/api/query` проверяет кэш перед повторным выполнением
 
+## Тесты
+
+В проекте есть два уровня тестов:
+
+- **Unit / API tests** — `Jest` через `next/jest`
+- **Smoke E2E** — `Playwright` для ручного конструктора отчётов
+
+### Основные команды
+
+```bash
+npm run test:unit   # быстрые unit + route tests
+npm run test:e2e    # browser smoke tests (сборка + Playwright)
+npm run test:ci     # lint + unit + build + e2e
+```
+
+### Когда что запускать
+
+- Менял `lib/*` или `app/api/*` → сначала `npm run test:unit`
+- Менял UI ручного отчёта, таблицу, фильтры, пагинацию, экспорт → `npm run test:e2e`
+- Перед пушем / PR → `npm run test:ci`
+
+### Где лежат тесты
+
+- `tests/unit/` — pure logic (`sql-validator`, `query-builder`, `report-history`)
+- `tests/api/` — route handlers (`/api/query`, `/api/report`, `/api/report/export`, `/api/report-history`)
+- `tests/helpers/` — общие helper’ы для `NextRequest`, временных БД и mock SQL request
+- `e2e/` — Playwright smoke tests
+
+### Точечный запуск
+
+```bash
+npx jest tests/unit/sql-validator.test.ts --runInBand
+npx jest tests/api/report-route.test.ts --runInBand
+npx playwright test e2e/manual-report.spec.ts
+```
+
+### Важные детали
+
+- `Playwright` гоняется на production-like сервере из standalone build, а API ручного отчёта в smoke-тестах мокается через `page.route(...)`
+- Для тестов истории чатов используется временный SQLite-файл через `REPORT_HISTORY_DB`
+- `eslint` сейчас может печатать project-level warnings; если нет `error`, это не ломает тестовый прогон
+
 ## Система скиллов агента
 
 Универсальная, расширяемая система. System prompt НЕ содержит упоминаний конкретных скиллов — агент узнаёт о них из tool definitions и каталога инструкций.

@@ -1,3 +1,5 @@
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import type { StoredConnection } from '@/lib/schema/types';
 import type {
   SourceEditorField,
@@ -116,16 +118,18 @@ export default function SourceEditorForm({
         ) : (
           <div className="space-y-2">
             {connections.map(connection => (
-              <button
+              <Button
                 key={connection.id}
                 type="button"
+                variant="outline"
                 onClick={() => onFieldChange('connectionId', connection.id)}
                 disabled={isIntrospecting}
-                className={`w-full rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                className={cn(
+                  'h-auto min-h-0 w-full justify-start rounded-lg border px-3 py-2.5 text-left font-normal transition-colors',
                   form.connectionId === connection.id
                     ? 'border-primary/40 bg-primary-fixed/30'
-                    : 'border-outline-variant/20 bg-surface-container-lowest hover:bg-surface-container-low'
-                }`}
+                    : 'border-outline-variant/20 bg-surface-container-lowest hover:bg-surface-container-low',
+                )}
               >
                 <div className="flex items-center gap-2">
                   <span
@@ -141,7 +145,7 @@ export default function SourceEditorForm({
                 <div className="mt-0.5 ml-3.5 font-mono text-xs text-on-surface-variant/60">
                   {connection.server}
                 </div>
-              </button>
+              </Button>
             ))}
           </div>
         )}
