@@ -122,6 +122,61 @@ export interface DataSource {
   manualReport?: boolean;
 }
 
+/**
+ * Explicit mapping of a period (date/number range) filter shared across both linked sources.
+ * Configured in the admin panel; shown as a single date picker in the linked report UI.
+ */
+/**
+ * Per-source field configuration for a shared period link.
+ *
+ * Single-field mode (toField absent):
+ *   fromField is filtered with both >= from AND <= to in a single WHERE clause.
+ *
+ * Two-field mode (toField present):
+ *   fromField is filtered with >= from  (e.g. "contract start date")
+ *   toField   is filtered with <= to    (e.g. "contract end date")
+ */
+export interface SharedPeriodSide {
+  /** Column filtered with >= user's "from" value */
+  fromField: string;
+  /** If set, this separate column is filtered with <= user's "to" value */
+  toField?: string;
+}
+
+export interface SharedPeriodLink {
+  /** Human-readable label shown in the shared date picker, e.g. 'Период договора' */
+  label: string;
+  left: SharedPeriodSide;
+  right: SharedPeriodSide;
+}
+
+/**
+ * Saved relation between two report sources.
+ * Used by the linked-report tab to fetch both datasets and merge them by value.
+ */
+export interface SourceLink {
+  /** Unique slug, e.g. 'client-product', 'surname-policy' */
+  id: string;
+  /** Human-readable name for UI */
+  name: string;
+  /** Optional short hint shown in the admin and linked report UI */
+  description?: string;
+  /** Left source in the visual editor / report */
+  leftSourceId: string;
+  /** Visible column key from the left source used as the join value */
+  leftJoinField: string;
+  /** Right source in the visual editor / report */
+  rightSourceId: string;
+  /** Visible column key from the right source used as the join value */
+  rightJoinField: string;
+  /**
+   * Single shared date/period filter configured in the admin.
+   * When set, one shared date picker is shown in the linked report instead of
+   * per-source period filters.
+   */
+  sharedPeriodLink?: SharedPeriodLink;
+}
+
 /** Text-only instruction: repo `.md` or admin `data/skills.json`. */
 export type TextInstructionSource = 'builtin' | 'data';
 

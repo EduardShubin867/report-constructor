@@ -1,5 +1,6 @@
 import sql from 'mssql';
-import type { StoredConnection } from './schema/types';
+import type { DataSource, StoredConnection } from './schema/types';
+import { getConnection } from './schema/store';
 
 // Slightly above EXPORT (60s) so app-level queryWithTimeout always fires first.
 const DRIVER_REQUEST_TIMEOUT_MS = 70_000;
@@ -90,6 +91,25 @@ export async function getPoolForConnection(
   if (existing?.connected) return existing;
   if (existing) pools.delete(key);
   return createPool(key, buildConfig(conn, database));
+}
+
+/**
+ * Resolve the correct pool for a source.
+ * Sources may use the default .env pool or a named stored connection.
+ */
+export async function getPoolForSource(
+  source: Pick<DataSource, 'connectionId' | 'database'>,
+): Promise<sql.ConnectionPool> {
+  if (!source.connectionId) {
+    return getPoolForConnection();
+  }
+
+  const conn = getConnection(source.connectionId);
+  if (!conn) {
+    throw new Error(`Connection "${source.connectionId}" not found`);
+  }
+
+  return getPoolForConnection(source.connectionId, conn, source.database);
 }
 
 /**

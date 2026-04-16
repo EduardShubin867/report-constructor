@@ -11,6 +11,7 @@ import {
   type ColumnDef,
   type SortingState,
 } from '@tanstack/react-table';
+import AppSelect from '@/components/ui/app-select';
 import { resolveAiColumnHeader } from '@/lib/column-header';
 
 /* ── Helpers (carried from SqlResultTable) ────────────────────────── */
@@ -43,6 +44,12 @@ interface DataTableProps {
   rowCount: number;
   warnings?: string[];
 }
+
+const PAGE_SIZES = [50, 100, 250, 500];
+const PAGE_SIZE_OPTIONS = PAGE_SIZES.map(size => ({
+  value: String(size),
+  label: String(size),
+}));
 
 /* ── Component ────────────────────────────────────────────────────── */
 
@@ -157,15 +164,15 @@ export default function DataTable({ data, columns, rowCount, warnings }: DataTab
         <div className="flex items-center justify-between border-t border-outline-variant/10 bg-surface-container-low px-4 py-1.5 text-xs text-on-surface-variant">
           <div className="flex items-center gap-2">
             <span>Строк на странице:</span>
-            <select
-              value={table.getState().pagination.pageSize}
-              onChange={e => table.setPageSize(Number(e.target.value))}
-              className="ui-field rounded-lg px-2 py-1 text-xs"
-            >
-              {[50, 100, 250, 500].map(size => (
-                <option key={size} value={size}>{size}</option>
-              ))}
-            </select>
+            <AppSelect
+              value={String(table.getState().pagination.pageSize)}
+              onValueChange={value => table.setPageSize(Number(value))}
+              options={PAGE_SIZE_OPTIONS}
+              triggerClassName="ui-field h-7 min-w-16 rounded-lg px-2 py-1 text-xs"
+              contentClassName="min-w-16"
+              labelClassName="text-xs"
+              ariaLabel="Выбор числа строк на странице"
+            />
           </div>
 
           <div className="flex items-center gap-2">

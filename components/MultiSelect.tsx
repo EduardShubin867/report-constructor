@@ -1,14 +1,16 @@
 'use client';
 
 import { ChevronDown, LoaderCircle } from 'lucide-react';
-import {
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+
+import { Button } from '@/components/ui/button';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
 
 interface MultiSelectProps {
   options: string[];
@@ -36,23 +38,21 @@ export default function MultiSelect({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
-  const ref = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, []);
+  const openInitializedRef = useRef(false);
 
   // Reset search when the dropdown closes so reopening starts fresh.
   useEffect(() => {
     if (!open) setSearch('');
   }, [open]);
+
+  useEffect(() => {
+    if (!openInitializedRef.current) {
+      openInitializedRef.current = true;
+      return;
+    }
+    onOpenChange?.(open);
+  }, [open, onOpenChange]);
 
   // Lowercase the query once per change and filter the full options list.
   const filtered = useMemo(() => {
@@ -96,45 +96,51 @@ export default function MultiSelect({
   const totalSize = rowVirtualizer.getTotalSize();
 
   return (
-    <div className={`relative ${open ? 'z-30' : ''}`} ref={ref}>
+    <div className={open ? 'z-30' : undefined}>
       {label && <label className="mb-1 block text-sm font-medium text-on-surface">{label}</label>}
-      <button
-        type="button"
-        onClick={() => {
-          setOpen(prev => {
-            const next = !prev;
-            onOpenChange?.(next);
-            return next;
-          });
-        }}
-        className={`ui-field flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm focus:outline-none ${
-          loading && !open
-            ? 'cursor-not-allowed border-outline-variant/10 bg-surface-container-low text-on-surface-variant/60'
-            : open
-              ? 'border-primary/30'
-              : ''
-        }`}
-      >
-        {loading && !open ? (
-          <span className="flex items-center gap-2 text-on-surface-variant/70">
-            <LoaderCircle className="h-3.5 w-3.5 animate-spin" strokeWidth={2.2} />
-            Загрузка…
-          </span>
-        ) : (
-          <>
-            <span className={value.length === 0 ? 'text-on-surface-variant/70' : 'text-on-surface'}>
-              {displayText}
-            </span>
-            <ChevronDown
-              className={`h-4 w-4 text-on-surface-variant transition-transform ${open ? 'rotate-180' : ''}`}
-              strokeWidth={2.2}
-            />
-          </>
-        )}
-      </button>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            className={cn(
+              'h-auto w-full justify-between rounded-xl px-3 py-2.5 text-left text-sm font-normal',
+              'border-input bg-background text-on-surface hover:bg-background',
+              'focus-visible:border-ring focus-visible:ring-ring/50',
+              loading && !open
+                ? 'border-outline-variant/10 bg-surface-container-low text-on-surface-variant/60'
+                : open
+                  ? 'border-primary/30'
+                  : undefined,
+            )}
+          >
+            {loading && !open ? (
+              <span className="flex items-center gap-2 text-on-surface-variant/70">
+                <LoaderCircle className="h-3.5 w-3.5 animate-spin" strokeWidth={2.2} />
+                Загрузка…
+              </span>
+            ) : (
+              <>
+                <span className={value.length === 0 ? 'text-on-surface-variant/70' : 'text-on-surface'}>
+                  {displayText}
+                </span>
+                <ChevronDown
+                  className={cn(
+                    'h-4 w-4 text-on-surface-variant transition-transform',
+                    open && 'rotate-180',
+                  )}
+                  strokeWidth={2.2}
+                />
+              </>
+            )}
+          </Button>
+        </PopoverTrigger>
 
-      {open && (
-        <div className="ui-panel absolute z-[80] mt-2 flex w-full flex-col overflow-hidden rounded-2xl">
+        <PopoverContent
+          align="start"
+          sideOffset={8}
+          className="w-[var(--radix-popover-trigger-width)] min-w-72 overflow-hidden rounded-2xl p-0"
+        >
           {loading ? (
             <div className="flex items-center gap-2 px-3 py-4 text-sm text-on-surface-variant/70">
               <LoaderCircle className="h-4 w-4 animate-spin" strokeWidth={2.2} />
@@ -208,8 +214,8 @@ export default function MultiSelect({
               </div>
             </>
           )}
-        </div>
-      )}
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }

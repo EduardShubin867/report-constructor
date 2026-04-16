@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPool, queryWithTimeout, TIMEOUT } from '@/lib/db';
+import { getPoolForSource, queryWithTimeout, TIMEOUT } from '@/lib/db';
 import {
   buildGenericWhere,
   buildGenericSelectAndJoins,
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     const tableRef = getSourceTableRef(sourceId);
     const filters = body.filters ?? {};
     const allDefs = getVisibleColumnDefs(sourceId);
-    const pool = await getPool();
+    const pool = await getPoolForSource(source);
 
     let result;
     let colDefs;

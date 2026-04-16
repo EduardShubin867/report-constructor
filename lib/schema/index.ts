@@ -6,16 +6,18 @@
  * subsequent requests pick up the changes without a server restart.
  */
 
-import type { DataSource } from './types';
-import { loadDynamicSources } from './store';
+import type { DataSource, SourceLink } from './types';
+import { loadDynamicSources, loadSourceLinks } from './store';
 import { effectiveColumnFilterTier } from '@/lib/report-filter-tier';
 
 // ── In-memory cache ──────────────────────────────────────────────────────────
 
 let _cache: DataSource[] | null = null;
+let _sourceLinksCache: SourceLink[] | null = null;
 
 export function invalidateSchemaCache(): void {
   _cache = null;
+  _sourceLinksCache = null;
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
@@ -36,6 +38,14 @@ export function getAllowedTables(): Set<string> {
 /** Sources marked as available in the manual report UI */
 export function getManualReportSources(): DataSource[] {
   return getDataSources().filter(s => s.manualReport === true);
+}
+
+/** All saved inter-source report links. Cached per process. */
+export function getSourceLinks(): SourceLink[] {
+  if (!_sourceLinksCache) {
+    _sourceLinksCache = loadSourceLinks();
+  }
+  return _sourceLinksCache;
 }
 
 /** Filterable column names across all sources — for list_column_values skill */
@@ -72,4 +82,13 @@ export const ALLOWED_TABLES: Set<string> = makeLiveSetProxy(getAllowedTables);
 /** Filterable column names across all sources — for list_column_values skill */
 export const FILTERABLE_COLUMNS: Set<string> = makeLiveSetProxy(getFilterableColumns);
 
-export type { DataSource, TableSchema, ColumnSchema, ForeignKey, ColumnType, DbConnection } from './types';
+export type {
+  DataSource,
+  TableSchema,
+  ColumnSchema,
+  ForeignKey,
+  ColumnType,
+  DbConnection,
+  SourceLink,
+  SharedPeriodLink,
+} from './types';

@@ -1,6 +1,6 @@
 import ExcelJS from 'exceljs';
 import { POST } from '@/app/api/report/export/route';
-import { getPool, queryWithTimeout } from '@/lib/db';
+import { getPoolForSource, queryWithTimeout } from '@/lib/db';
 import {
   buildGenericSelectAndJoins,
   buildGenericWhere,
@@ -19,7 +19,7 @@ jest.mock('@/lib/db', () => ({
   TIMEOUT: {
     EXPORT: 60_000,
   },
-  getPool: jest.fn(),
+  getPoolForSource: jest.fn(),
   queryWithTimeout: jest.fn(),
   sql: {
     Int: 'Int',
@@ -53,7 +53,7 @@ async function loadWorkbook(response: Response) {
 }
 
 describe('/api/report/export POST', () => {
-  const mockedGetPool = jest.mocked(getPool);
+  const mockedGetPoolForSource = jest.mocked(getPoolForSource);
   const mockedQueryWithTimeout = jest.mocked(queryWithTimeout);
   const mockedBuildGenericSelectAndJoins = jest.mocked(buildGenericSelectAndJoins);
   const mockedBuildGenericWhere = jest.mocked(buildGenericWhere);
@@ -85,7 +85,7 @@ describe('/api/report/export POST', () => {
     mockedSafeDetailSortColumn.mockReset().mockReturnValue(null);
     mockedSafeGroupedSortColumn.mockReset().mockReturnValue(null);
     mockedQueryWithTimeout.mockReset();
-    mockedGetPool.mockReset();
+    mockedGetPoolForSource.mockReset();
   });
 
   it('returns 400 when no valid columns are selected', async () => {
@@ -103,7 +103,7 @@ describe('/api/report/export POST', () => {
 
   it('exports detail-mode workbooks with visible headers and rows', async () => {
     const { pool } = createMockPool();
-    mockedGetPool.mockResolvedValue(pool as never);
+    mockedGetPoolForSource.mockResolvedValue(pool as never);
     mockedSafeColumns.mockReturnValueOnce(['Агент', 'Премия']).mockReturnValueOnce([]);
     mockedQueryWithTimeout.mockResolvedValue({
       recordset: [{ ID: '1', Агент: 'Альфа', Премия: 1234.5 }],
@@ -138,7 +138,7 @@ describe('/api/report/export POST', () => {
 
   it('exports grouped workbooks without contract count when disabled', async () => {
     const { pool } = createMockPool();
-    mockedGetPool.mockResolvedValue(pool as never);
+    mockedGetPoolForSource.mockResolvedValue(pool as never);
     mockedSafeColumns.mockReturnValueOnce(['Агент', 'Премия']).mockReturnValueOnce(['Агент']);
     mockedQueryWithTimeout.mockResolvedValue({
       recordset: [{ Агент: 'Альфа', Премия: 5000 }],

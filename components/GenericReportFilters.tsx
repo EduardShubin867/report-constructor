@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import MultiSelect from './MultiSelect';
+import { DatePicker } from '@/components/ui/date-picker';
 import type { FilterDef, PeriodFilterCol } from '@/lib/report-filters-data';
 
 
@@ -148,6 +149,7 @@ export default function GenericReportFilters({
 
               {periodFilterCols.map(col => {
                 const p = periodFilters[col.key] ?? { from: '', to: '' };
+                const isNumber = col.type === 'number';
                 return (
                   <div
                     key={col.key}
@@ -155,19 +157,35 @@ export default function GenericReportFilters({
                   >
                     <label className="mb-1 block text-sm font-medium text-on-surface">{col.label}</label>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-center">
-                      <input
-                        type={col.type === 'number' ? 'number' : 'date'}
-                        value={p.from}
-                        onChange={e => onPeriodChange(col.key, e.target.value, p.to)}
-                        className="ui-field min-w-0 rounded-xl px-3 py-2.5 text-sm focus:border-primary focus:outline-none"
-                      />
+                      {isNumber ? (
+                        <input
+                          type="number"
+                          value={p.from}
+                          onChange={e => onPeriodChange(col.key, e.target.value, p.to)}
+                          className="ui-field min-w-0 rounded-xl px-3 py-2.5 text-sm focus:border-primary focus:outline-none"
+                        />
+                      ) : (
+                        <DatePicker
+                          value={p.from}
+                          onChange={value => onPeriodChange(col.key, value, p.to)}
+                          placeholder="С даты"
+                        />
+                      )}
                       <span className="hidden text-center text-outline-variant sm:block">—</span>
-                      <input
-                        type={col.type === 'number' ? 'number' : 'date'}
-                        value={p.to}
-                        onChange={e => onPeriodChange(col.key, p.from, e.target.value)}
-                        className="ui-field min-w-0 rounded-xl px-3 py-2.5 text-sm focus:border-primary focus:outline-none"
-                      />
+                      {isNumber ? (
+                        <input
+                          type="number"
+                          value={p.to}
+                          onChange={e => onPeriodChange(col.key, p.from, e.target.value)}
+                          className="ui-field min-w-0 rounded-xl px-3 py-2.5 text-sm focus:border-primary focus:outline-none"
+                        />
+                      ) : (
+                        <DatePicker
+                          value={p.to}
+                          onChange={value => onPeriodChange(col.key, p.from, value)}
+                          placeholder="По дату"
+                        />
+                      )}
                     </div>
                   </div>
                 );

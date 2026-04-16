@@ -122,6 +122,9 @@ export function buildGenericWhere(
   filters: Record<string, string[]>,
   source: DataSource,
   periodFilters?: Record<string, { from: string; to: string }>,
+  /** Like periodFilters but bypasses the `periodFilter: true` schema flag check.
+   *  Only verifies the column exists in the table — used for admin-configured shared dates. */
+  trustedPeriodFilters?: Record<string, { from: string; to: string }>,
 ): string {
   const table = getMainTable(source);
   const alias = table.alias ?? 'm';
@@ -191,6 +194,36 @@ export function buildGenericWhere(
         if (to) {
           req.input(`pr${i}t`, sql.Date, new Date(to));
           conditions.push(`CAST(${alias}.[${colName}] AS DATE) <= @pr${i}t`);
+        }
+      }
+    }
+  }
+
+  // Trusted period ranges — admin-configured fields, no periodFilter flag required
+  if (trustedPeriodFilters) {
+    let tIdx = 0;
+    for (const [colName, { from, to }] of Object.entries(trustedPeriodFilters)) {
+      if (!from && !to) continue;
+      const col = table.columns.find(c => c.name === colName);
+      if (!col) continue; // column must still exist in schema
+      const i = tIdx++;
+      if (col.type === 'number') {
+        if (from) {
+          req.input(`tpr${i}f`, sql.Float, parseFloat(from));
+          conditions.push(`${alias}.[${colName}] >= @tpr${i}f`);
+        }
+        if (to) {
+          req.input(`tpr${i}t`, sql.Float, parseFloat(to));
+          conditions.push(`${alias}.[${colName}] <= @tpr${i}t`);
+        }
+      } else {
+        if (from) {
+          req.input(`tpr${i}f`, sql.Date, new Date(from));
+          conditions.push(`CAST(${alias}.[${colName}] AS DATE) >= @tpr${i}f`);
+        }
+        if (to) {
+          req.input(`tpr${i}t`, sql.Date, new Date(to));
+          conditions.push(`CAST(${alias}.[${colName}] AS DATE) <= @tpr${i}t`);
         }
       }
     }

@@ -1,5 +1,5 @@
 import { POST } from '@/app/api/report/route';
-import { getPool, queryWithTimeout } from '@/lib/db';
+import { getPoolForSource, queryWithTimeout } from '@/lib/db';
 import {
   buildGenericSelectAndJoins,
   buildGenericWhere,
@@ -18,7 +18,7 @@ jest.mock('@/lib/db', () => ({
   TIMEOUT: {
     REPORT: 30_000,
   },
-  getPool: jest.fn(),
+  getPoolForSource: jest.fn(),
   queryWithTimeout: jest.fn(),
   sql: {
     Int: 'Int',
@@ -46,7 +46,7 @@ jest.mock('@/lib/visible-columns', () => ({
 }));
 
 describe('/api/report POST', () => {
-  const mockedGetPool = jest.mocked(getPool);
+  const mockedGetPoolForSource = jest.mocked(getPoolForSource);
   const mockedQueryWithTimeout = jest.mocked(queryWithTimeout);
   const mockedBuildGenericSelectAndJoins = jest.mocked(buildGenericSelectAndJoins);
   const mockedBuildGenericWhere = jest.mocked(buildGenericWhere);
@@ -76,7 +76,7 @@ describe('/api/report POST', () => {
     mockedSafeDetailSortColumn.mockReset().mockReturnValue(null);
     mockedSafeGroupedSortColumn.mockReset().mockReturnValue(null);
     mockedQueryWithTimeout.mockReset();
-    mockedGetPool.mockReset();
+    mockedGetPoolForSource.mockReset();
   });
 
   it('returns 400 when the requested source is missing', async () => {
@@ -108,7 +108,7 @@ describe('/api/report POST', () => {
 
   it('builds detail reports with date fallback sorting and paginated params', async () => {
     const { pool, requests } = createMockPool();
-    mockedGetPool.mockResolvedValue(pool as never);
+    mockedGetPoolForSource.mockResolvedValue(pool as never);
     mockedSafeColumns.mockReturnValueOnce(['Агент', 'Премия']).mockReturnValueOnce([]);
     mockedQueryWithTimeout
       .mockResolvedValueOnce({ recordset: [{ total: 120 }] } as never)
@@ -154,7 +154,7 @@ describe('/api/report POST', () => {
 
   it('builds grouped reports and falls back to the first grouping column for sorting', async () => {
     const { pool, requests } = createMockPool();
-    mockedGetPool.mockResolvedValue(pool as never);
+    mockedGetPoolForSource.mockResolvedValue(pool as never);
     mockedSafeColumns.mockReturnValueOnce(['Агент', 'Премия']).mockReturnValueOnce(['Агент']);
     mockedQueryWithTimeout
       .mockResolvedValueOnce({ recordset: [{ total: 3 }] } as never)
@@ -195,7 +195,7 @@ describe('/api/report POST', () => {
 
   it('uses safe explicit detail sorting when available', async () => {
     const { pool } = createMockPool();
-    mockedGetPool.mockResolvedValue(pool as never);
+    mockedGetPoolForSource.mockResolvedValue(pool as never);
     mockedSafeColumns.mockReturnValueOnce(['Агент', 'Премия']).mockReturnValueOnce([]);
     mockedSafeDetailSortColumn.mockReturnValue('Премия');
     mockedQueryWithTimeout

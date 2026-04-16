@@ -2,10 +2,15 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import AppSelect from '@/components/ui/app-select';
 import { BASE_PATH } from '@/lib/constants';
 import type { StoredConnection } from '@/lib/schema/types';
 
 const DIALECTS = ['mssql', 'postgres', 'clickhouse'] as const;
+const DIALECT_OPTIONS = DIALECTS.map(dialect => ({
+  value: dialect,
+  label: dialect,
+}));
 
 type TestState =
   | { status: 'idle' }
@@ -152,13 +157,14 @@ export default function ConnectionEditor({ initial, onSaved, onCancel }: Props) 
           </label>
           <label className="block">
             <span className="text-xs text-on-surface-variant mb-1 block">Диалект</span>
-            <select
-              className={inputClass}
+            <AppSelect
               value={form.dialect}
-              onChange={e => setField('dialect', e.target.value as typeof DIALECTS[number])}
-            >
-              {DIALECTS.map(d => <option key={d}>{d}</option>)}
-            </select>
+              onValueChange={value => setField('dialect', value as typeof DIALECTS[number])}
+              options={DIALECT_OPTIONS}
+              triggerClassName={inputClass}
+              labelClassName="text-sm"
+              ariaLabel="Выбор диалекта"
+            />
           </label>
         </div>
 

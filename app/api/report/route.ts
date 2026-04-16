@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPool, sql, queryWithTimeout, TIMEOUT } from '@/lib/db';
+import { getPoolForSource, sql, queryWithTimeout, TIMEOUT } from '@/lib/db';
 import {
   buildGenericWhere,
   buildGenericSelectAndJoins,
@@ -11,7 +11,7 @@ import {
   type GenericReportRequest,
 } from '@/lib/query-builder';
 import { getDataSources, getManualReportSources } from '@/lib/schema';
-import { getSourceTableRef, getSourceJoinDefs } from '@/lib/visible-columns';
+import { getSourceTableRef } from '@/lib/visible-columns';
 
 export type { GenericReportRequest };
 
@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
     const groupBy = safeColumns(body.groupBy ?? [], sourceId);
     const tableRef = getSourceTableRef(sourceId);
     const filters = body.filters ?? {};
-    const pool = await getPool();
+    const pool = await getPoolForSource(source);
 
     if (groupBy.length > 0) {
       // --- GROUPED MODE ---

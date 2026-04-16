@@ -7,6 +7,7 @@ import { BASE_PATH } from '@/lib/constants';
 const TABS = [
   { label: 'Скиллы', href: '/admin/skills' },
   { label: 'Источники данных', href: '/admin/connections' },
+  { label: 'Связи источников', href: '/admin/source-links' },
 ];
 
 export default function AdminNav() {

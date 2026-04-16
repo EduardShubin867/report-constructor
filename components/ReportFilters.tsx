@@ -1,6 +1,7 @@
 'use client';
 
 import MultiSelect from './MultiSelect';
+import { DatePicker } from '@/components/ui/date-picker';
 
 export interface FilterValues {
   агент: string[];
@@ -81,11 +82,17 @@ export default function ReportFilters({ filters, options, loading, filtersLoadin
         <div className="flex flex-col gap-1 lg:col-span-2">
           <label className="block text-sm font-medium text-on-surface">Период</label>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-center">
-            <input type="date" value={filters.датаОт} onChange={e => set('датаОт', e.target.value)}
-              className="ui-field min-w-0 rounded-xl px-3 py-2.5 text-sm focus:border-primary focus:outline-none" />
+            <DatePicker
+              value={filters.датаОт}
+              onChange={value => set('датаОт', value)}
+              placeholder="С даты"
+            />
             <span className="hidden text-center text-outline-variant sm:block">—</span>
-            <input type="date" value={filters.датаДо} onChange={e => set('датаДо', e.target.value)}
-              className="ui-field min-w-0 rounded-xl px-3 py-2.5 text-sm focus:border-primary focus:outline-none" />
+            <DatePicker
+              value={filters.датаДо}
+              onChange={value => set('датаДо', value)}
+              placeholder="По дату"
+            />
           </div>
         </div>
 

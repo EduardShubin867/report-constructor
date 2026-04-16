@@ -1,7 +1,7 @@
 import { unstable_cache, revalidatePath, revalidateTag } from 'next/cache';
 import { getDataSources } from '@/lib/schema';
 import { BASE_PATH } from '@/lib/constants';
-import { getPool, queryWithTimeout, TIMEOUT } from '@/lib/db';
+import { getPoolForSource, queryWithTimeout, TIMEOUT } from '@/lib/db';
 import type { ColumnDef } from '@/lib/report-columns';
 import type { DataSource, TableSchema } from '@/lib/schema/types';
 import { buildFilterDescriptors } from '@/lib/report-filter-tier';
@@ -77,7 +77,7 @@ async function loadSingleFilterKeyValuesUncached(sourceId: string, key: string):
   if (!source) return [];
   const desc = buildFilterDescriptors(source).find(d => d.key === key);
   if (!desc) return [];
-  const pool = await getPool();
+  const pool = await getPoolForSource(source);
   try {
     const r = await queryWithTimeout(pool.request(), desc.sql, TIMEOUT.QUERY);
     return r.recordset.map(row => String(row['v']));

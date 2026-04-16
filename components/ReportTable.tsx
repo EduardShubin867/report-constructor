@@ -1,5 +1,6 @@
 'use client';
 
+import AppSelect from '@/components/ui/app-select';
 import { ALL_COLUMNS } from '@/lib/report-columns';
 
 interface ReportTableProps {
@@ -14,6 +15,10 @@ interface ReportTableProps {
 }
 
 const PAGE_SIZES = [50, 100, 200];
+const PAGE_SIZE_OPTIONS = PAGE_SIZES.map(size => ({
+  value: String(size),
+  label: String(size),
+}));
 
 function formatValue(value: unknown, type: string): string {
   if (value === null || value === undefined) return '';
@@ -65,10 +70,15 @@ export default function ReportTable({
         </span>
         <label className="flex items-center gap-1.5 text-xs text-on-surface-variant">
           Строк:
-          <select value={pageSize} onChange={e => onPageSizeChange(Number(e.target.value))}
-            className="ui-field rounded-lg px-2 py-1 text-xs focus:outline-none">
-            {PAGE_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+          <AppSelect
+            value={String(pageSize)}
+            onValueChange={value => onPageSizeChange(Number(value))}
+            options={PAGE_SIZE_OPTIONS}
+            triggerClassName="ui-field h-7 min-w-16 rounded-lg px-2 py-1 text-xs"
+            contentClassName="min-w-16"
+            labelClassName="text-xs"
+            ariaLabel="Выбор числа строк на странице"
+          />
         </label>
       </div>
 

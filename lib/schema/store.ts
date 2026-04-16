@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import type { DataSource, StoredConnection, Skill } from './types';
+import type { DataSource, SourceLink, StoredConnection, Skill } from './types';
 
 // ── Sources ──────────────────────────────────────────────────────────────────
 
@@ -68,6 +68,42 @@ export function saveConnection(conn: StoredConnection): void {
 
 export function deleteConnection(id: string): void {
   writeConnections(readConnections().filter(c => c.id !== id));
+}
+
+// ── Source links ─────────────────────────────────────────────────────────────
+
+const SOURCE_LINKS_PATH = path.join(process.cwd(), 'data', 'source-links.json');
+
+function readSourceLinks(): SourceLink[] {
+  try {
+    return JSON.parse(fs.readFileSync(SOURCE_LINKS_PATH, 'utf-8')) as SourceLink[];
+  } catch {
+    return [];
+  }
+}
+
+function writeSourceLinks(links: SourceLink[]): void {
+  fs.mkdirSync(path.dirname(SOURCE_LINKS_PATH), { recursive: true });
+  fs.writeFileSync(SOURCE_LINKS_PATH, JSON.stringify(links, null, 2), 'utf-8');
+}
+
+export function loadSourceLinks(): SourceLink[] {
+  return readSourceLinks();
+}
+
+export function saveSourceLink(link: SourceLink): void {
+  const links = readSourceLinks();
+  const idx = links.findIndex(item => item.id === link.id);
+  if (idx >= 0) {
+    links[idx] = link;
+  } else {
+    links.push(link);
+  }
+  writeSourceLinks(links);
+}
+
+export function deleteSourceLink(id: string): void {
+  writeSourceLinks(readSourceLinks().filter(link => link.id !== id));
 }
 
 // ── Skills ───────────────────────────────────────────────────────────────────

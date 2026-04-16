@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { motion, useScroll, useMotionValueEvent, AnimatePresence } from 'framer-motion';
 import DbStatus from '@/components/DbStatus';
 
-export type ReportsTab = 'ai' | 'manual';
+export type ReportsTab = 'ai' | 'manual' | 'linked';
 
 interface ReportsChromeProps {
   onCreateReport: () => void;
@@ -17,6 +17,7 @@ interface ReportsChromeProps {
 
 const CHAT_HREF = '/reports/chat';
 const MANUAL_HREF = '/reports/manual';
+const LINKED_HREF = '/reports/linked';
 
 function BrandMark({ compact = false }: { compact?: boolean }) {
   return (
@@ -46,7 +47,11 @@ export default function ReportsChrome({
   children,
 }: ReportsChromeProps) {
   const pathname = usePathname();
-  const tab: ReportsTab = pathname?.startsWith(MANUAL_HREF) ? 'manual' : 'ai';
+  const tab: ReportsTab = pathname?.startsWith(LINKED_HREF)
+    ? 'linked'
+    : pathname?.startsWith(MANUAL_HREF)
+      ? 'manual'
+      : 'ai';
   const [compact, setCompact] = useState(false);
   const [allowCompact, setAllowCompact] = useState(false);
   const lastY = useRef(0);
@@ -82,7 +87,8 @@ export default function ReportsChrome({
     else if (delta < -8) setCompact(false);
   });
 
-  const createLabel = tab === 'ai' ? 'Новый чат' : 'Новый отчет';
+  const createLabel =
+    tab === 'ai' ? 'Новый чат' : tab === 'linked' ? 'Новая сводка' : 'Новый отчет';
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-background text-on-surface">
@@ -121,6 +127,10 @@ export default function ReportsChrome({
                 <Link href={MANUAL_HREF} className={tabBtn(tab === 'manual')}>
                   <span className="sm:hidden">Ручной</span>
                   <span className="hidden sm:inline">Конструктор</span>
+                </Link>
+                <Link href={LINKED_HREF} className={tabBtn(tab === 'linked')}>
+                  <span className="sm:hidden">Сводный</span>
+                  <span className="hidden sm:inline">Сводный</span>
                 </Link>
               </div>
             </motion.div>
@@ -191,6 +201,9 @@ export default function ReportsChrome({
                 </Link>
                 <Link href={MANUAL_HREF} className={tabBtn(tab === 'manual', true)}>
                   Конструктор
+                </Link>
+                <Link href={LINKED_HREF} className={tabBtn(tab === 'linked', true)}>
+                  Сводный
                 </Link>
               </div>
               <span className="h-5 w-px shrink-0 bg-outline-variant/25" aria-hidden />

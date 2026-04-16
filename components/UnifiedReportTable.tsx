@@ -1,7 +1,7 @@
 'use client';
 
 import { ArrowLeft, ArrowRight, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -11,6 +11,7 @@ import {
   type ColumnDef,
   type SortingState,
 } from '@tanstack/react-table';
+import AppSelect from '@/components/ui/app-select';
 
 export interface ReportColumn {
   key: string;
@@ -38,9 +39,20 @@ interface UnifiedReportTableProps {
   onServerSortClick?: (columnKey: string) => void;
   warnings?: string[];
   mode: 'server' | 'client';
+  /**
+   * Клиентский режим: сгруппировать отображаемые строки по значению колонки (порядок групп —
+   * по первому появлению после текущей сортировки).
+   */
+  clientGroupByColumnKey?: string | null;
+  /** Не дублировать колонку группировки в каждой строке — только в шапке группы. */
+  hideGroupColumnWhenGrouped?: boolean;
 }
 
 const PAGE_SIZES = [50, 100, 200, 500];
+const PAGE_SIZE_OPTIONS = PAGE_SIZES.map(size => ({
+  value: String(size),
+  label: String(size),
+}));
 
 function formatValue(value: unknown, type?: string, integer?: boolean): string {
   if (value === null || value === undefined) return '';
@@ -78,6 +90,18 @@ function formatValue(value: unknown, type?: string, integer?: boolean): string {
   return String(value);
 }
 
+function stableGroupKey(value: unknown): string {
+  if (value == null) return '\0__null__';
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
 function pluralRecords(n: number): string {
   const mod10 = n % 10;
   const mod100 = n % 100;
@@ -101,6 +125,8 @@ export default function UnifiedReportTable({
   onServerSortClick,
   warnings,
   mode,
+  clientGroupByColumnKey = null,
+  hideGroupColumnWhenGrouped = true,
 }: UnifiedReportTableProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const tableScrollRef = useRef<HTMLDivElement>(null);
@@ -108,9 +134,20 @@ export default function UnifiedReportTable({
   const [contentWidth, setContentWidth] = useState(0);
   const isSyncing = useRef(false);
 
+  const displayColumns = useMemo(() => {
+    if (
+      mode === 'client' &&
+      clientGroupByColumnKey &&
+      hideGroupColumnWhenGrouped
+    ) {
+      return columns.filter(col => col.key !== clientGroupByColumnKey);
+    }
+    return columns;
+  }, [columns, mode, clientGroupByColumnKey, hideGroupColumnWhenGrouped]);
+
   const numericKeys = useMemo(() => {
     const set = new Set<string>();
-    for (const col of columns) {
+    for (const col of displayColumns) {
       if (col.type === 'number') {
         set.add(col.key);
       } else if (!col.type) {
@@ -121,16 +158,16 @@ export default function UnifiedReportTable({
       }
     }
     return set;
-  }, [columns, data]);
+  }, [displayColumns, data]);
 
   const tanstackCols = useMemo<ColumnDef<Record<string, unknown>>[]>(
     () =>
-      columns.map(col => ({
+      displayColumns.map(col => ({
         accessorKey: col.key,
         header: col.label,
         cell: info => formatValue(info.getValue(), col.type, col.integer),
       })),
-    [columns],
+    [displayColumns],
   );
 
   const isServer = mode === 'server';
@@ -162,7 +199,7 @@ export default function UnifiedReportTable({
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [data, columns]);
+  }, [data, displayColumns]);
 
   const syncScroll = useCallback(
     (source: 'table' | 'floating') => {
@@ -211,6 +248,43 @@ export default function UnifiedReportTable({
     tableScrollRef.current
       ? contentWidth > tableScrollRef.current.clientWidth
       : false;
+
+  const groupColumnMeta = useMemo(() => {
+    if (!clientGroupByColumnKey) return null;
+    return columns.find(col => col.key === clientGroupByColumnKey) ?? null;
+  }, [columns, clientGroupByColumnKey]);
+
+  const clientGroupSections = useMemo(() => {
+    if (isServer || !clientGroupByColumnKey) return null;
+    const flatRows = table.getRowModel().rows;
+    if (flatRows.length === 0) return null;
+    const order: string[] = [];
+    const buckets = new Map<string, typeof flatRows>();
+    for (const row of flatRows) {
+      const raw = row.original[clientGroupByColumnKey];
+      const sk = stableGroupKey(raw);
+      if (!buckets.has(sk)) {
+        buckets.set(sk, []);
+        order.push(sk);
+      }
+      buckets.get(sk)!.push(row);
+    }
+    return order.map(sk => {
+      const rows = buckets.get(sk)!;
+      const sample = rows[0].original[clientGroupByColumnKey];
+      const label = formatValue(
+        sample,
+        groupColumnMeta?.type,
+        groupColumnMeta?.integer,
+      );
+      return { sk, label, rows };
+    });
+  }, [
+    isServer,
+    clientGroupByColumnKey,
+    groupColumnMeta,
+    table,
+  ]);
 
   const showInitialSkeleton = loading && data.length === 0;
 
@@ -269,7 +343,12 @@ export default function UnifiedReportTable({
                 Результат
               </span>
               <span className="ui-chip inline-flex items-center rounded-full px-3 py-1 text-xs font-medium">
-                {columns.length} {columns.length === 1 ? 'колонка' : columns.length < 5 ? 'колонки' : 'колонок'}
+                {displayColumns.length}{' '}
+                {displayColumns.length === 1
+                  ? 'колонка'
+                  : displayColumns.length < 5
+                    ? 'колонки'
+                    : 'колонок'}
               </span>
               {totalPages > 1 ? (
                 <span className="ui-chip inline-flex items-center rounded-full px-3 py-1 text-xs font-medium">
@@ -411,7 +490,65 @@ export default function UnifiedReportTable({
                       ))}
                     </tr>
                   ))
-                : table.getRowModel().rows.map(row => (
+                : clientGroupSections
+                  ? clientGroupSections.map(section => {
+                      const headerTitle =
+                        groupColumnMeta?.label ?? 'Значение связи';
+                      const headerValue =
+                        section.label.trim() === '' ? '(пусто)' : section.label;
+                      return (
+                        <Fragment key={section.sk}>
+                          <tr className="bg-primary-fixed/55">
+                            <td
+                              colSpan={displayColumns.length}
+                              className="px-5 py-2.5 text-xs text-on-surface"
+                            >
+                              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                                <span>
+                                  <span className="font-semibold text-on-surface">
+                                    {headerTitle}
+                                  </span>
+                                  <span className="ml-1.5 font-mono text-on-surface-variant">
+                                    {headerValue}
+                                  </span>
+                                </span>
+                                <span className="text-on-surface-variant">
+                                  {section.rows.length.toLocaleString('ru-RU')}{' '}
+                                  {pluralRecords(section.rows.length)}
+                                </span>
+                              </div>
+                            </td>
+                          </tr>
+                          {section.rows.map((row, rowIdx) => (
+                            <tr
+                              key={row.id}
+                              className={`transition-colors hover:bg-primary-fixed/45 ${
+                                rowIdx % 2 === 0
+                                  ? 'bg-surface-container-lowest/82'
+                                  : 'bg-surface-container-low/28'
+                              }`}
+                            >
+                              {row.getVisibleCells().map(cell => (
+                                <td
+                                  key={cell.id}
+                                  className={`whitespace-nowrap px-5 py-2.5 text-xs text-on-surface ${
+                                    numericKeys.has(cell.column.id)
+                                      ? 'text-right font-mono tabular-nums'
+                                      : ''
+                                  }`}
+                                >
+                                  {flexRender(
+                                    cell.column.columnDef.cell,
+                                    cell.getContext(),
+                                  )}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </Fragment>
+                      );
+                    })
+                  : table.getRowModel().rows.map(row => (
                     <tr
                       key={row.id}
                       className={`transition-colors hover:bg-primary-fixed/45 ${
@@ -454,21 +591,19 @@ export default function UnifiedReportTable({
         <div className="flex items-center justify-end gap-4 border-t border-outline-variant/10 bg-surface-container-low px-4 py-2">
           <label className="flex items-center gap-1.5 text-xs text-on-surface-variant">
             На странице:
-            <select
-              value={isServer ? pageSize : table.getState().pagination.pageSize}
-              onChange={e => {
-                const s = Number(e.target.value);
-                if (isServer) onPageSizeChange?.(s);
-                else table.setPageSize(s);
+            <AppSelect
+              value={String(isServer ? pageSize : table.getState().pagination.pageSize)}
+              onValueChange={value => {
+                const size = Number(value);
+                if (isServer) onPageSizeChange?.(size);
+                else table.setPageSize(size);
               }}
-              className="ui-field rounded-lg px-2 py-1 text-xs focus:outline-none"
-            >
-              {PAGE_SIZES.map(s => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
+              options={PAGE_SIZE_OPTIONS}
+              triggerClassName="ui-field h-7 min-w-16 rounded-lg px-2 py-1 text-xs"
+              contentClassName="min-w-16"
+              labelClassName="text-xs"
+              ariaLabel="Выбор числа строк на странице"
+            />
           </label>
 
           <div className="flex items-center gap-0.5">
