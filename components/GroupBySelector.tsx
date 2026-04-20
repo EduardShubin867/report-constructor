@@ -12,9 +12,24 @@ interface GroupBySelectorProps {
   onChange: (cols: string[]) => void;
   /** Измерения: основная таблица + поля FK (см. groupByFields в схеме источника). */
   availableColumns: ColumnDef[];
+  /** Compact inline mode: renders without outer card/title */
+  compact?: boolean;
+  /** Show "include contract count" checkbox (only relevant when compact + groupBy active) */
+  showContractCount?: boolean;
+  onShowContractCountChange?: (v: boolean) => void;
+  /** Keys of columns already selected for display (Block 1) — shown first in compact mode */
+  displayColumns?: string[];
 }
 
-export default function GroupBySelector({ groupBy, onChange, availableColumns }: GroupBySelectorProps) {
+export default function GroupBySelector({
+  groupBy,
+  onChange,
+  availableColumns,
+  compact = false,
+  showContractCount,
+  onShowContractCountChange,
+  displayColumns = [],
+}: GroupBySelectorProps) {
   const [open, setOpen] = useState(false);
   const isActive = groupBy.length > 0;
   const selectedDefs = availableColumns.filter(col => groupBy.includes(col.key));
@@ -59,6 +74,84 @@ export default function GroupBySelector({ groupBy, onChange, availableColumns }:
           </span>
         </span>
       </label>
+    );
+  }
+
+  if (compact) {
+    const selectedCols = availableColumns.filter(col => displayColumns.includes(col.key));
+    const unselectedCols = availableColumns.filter(col => !displayColumns.includes(col.key));
+
+    return (
+      <div className="space-y-3">
+        {availableColumns.length === 0 ? (
+          <p className="text-xs text-[#75726e]">Нет доступных полей для группировки.</p>
+        ) : (
+          <>
+            <div className="flex flex-wrap gap-1.5">
+              {selectedCols.length > 0 && (
+                <>
+                  {selectedCols.map(col => {
+                    const inGroupBy = groupBy.includes(col.key);
+                    return (
+                      <button
+                        key={col.key}
+                        type="button"
+                        onClick={() => toggle(col.key)}
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12.5px] transition-colors ${
+                          inGroupBy
+                            ? 'border-[#3a5a7a]/30 bg-[#eaf0f6] text-[#1c1b1a] hover:bg-[#dfe8f0]'
+                            : 'border-[#e7e5e3] bg-white text-[#1c1b1a] hover:bg-[#f5f5f4]'
+                        }`}
+                      >
+                        {inGroupBy && <span className="text-[10px] text-[#3a5a7a]">✓</span>}
+                        {col.label}
+                      </button>
+                    );
+                  })}
+                  {unselectedCols.length > 0 && (
+                    <div className="self-center w-px h-4 bg-[#e7e5e3] mx-0.5" />
+                  )}
+                </>
+              )}
+              {unselectedCols.map(col => {
+                const inGroupBy = groupBy.includes(col.key);
+                return (
+                  <button
+                    key={col.key}
+                    type="button"
+                    onClick={() => toggle(col.key)}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12.5px] transition-colors ${
+                      inGroupBy
+                        ? 'border-[#3a5a7a]/30 bg-[#eaf0f6] text-[#1c1b1a] hover:bg-[#dfe8f0]'
+                        : 'border-[#e7e5e3] bg-[#f5f5f4] text-[#75726e] hover:bg-[#efeeec] hover:text-[#1c1b1a]'
+                    }`}
+                  >
+                    {inGroupBy && <span className="text-[10px] text-[#3a5a7a]">✓</span>}
+                    {col.label}
+                  </button>
+                );
+              })}
+            </div>
+            {isActive && groupBy.length > 0 && onShowContractCountChange !== undefined && (
+              <label className="flex cursor-pointer items-center gap-2 text-xs text-[#75726e]">
+                <input
+                  type="checkbox"
+                  checked={showContractCount ?? true}
+                  onChange={e => onShowContractCountChange(e.target.checked)}
+                  className="accent-[#3a5a7a]"
+                />
+                Добавить колонку «Кол-во договоров»
+              </label>
+            )}
+            {isActive && (
+              <button type="button" onClick={() => onChange([])}
+                className="text-xs text-[#75726e] hover:text-[#1c1b1a] underline underline-offset-2">
+                Сбросить группировку
+              </button>
+            )}
+          </>
+        )}
+      </div>
     );
   }
 

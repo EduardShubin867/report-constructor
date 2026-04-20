@@ -142,6 +142,30 @@ export function useSourceEditorLocalState({
     );
   }
 
+  function setColumnLabel(tableIdx: number, colIdx: number, label: string) {
+    updateColumn(tableIdx, colIdx, column => {
+      const trimmed = label.trim();
+      if (!trimmed || trimmed === column.name) {
+        const { label: _omit, ...rest } = column;
+        void _omit;
+        return rest;
+      }
+      return { ...column, label: trimmed };
+    });
+  }
+
+  function setTableDisplayName(tableIdx: number, label: string) {
+    updateTable(tableIdx, table => {
+      const trimmed = label.trim();
+      if (!trimmed || trimmed === table.name) {
+        const { displayName: _omit, ...rest } = table;
+        void _omit;
+        return rest;
+      }
+      return { ...table, displayName: trimmed };
+    });
+  }
+
   function toggleManualReport() {
     updateSource(current => ({ ...current, manualReport: !current.manualReport }));
   }
@@ -277,6 +301,8 @@ export function useSourceEditorLocalState({
     setFkFilterTier,
     toggleGroupable,
     togglePeriodFilter,
+    setColumnLabel,
+    setTableDisplayName,
     toggleManualReport,
     setFkFilterPanelOpen,
     addFkFilter,

@@ -28,6 +28,11 @@ export interface LinkedReportRequest {
   rightColumns: string[];
   leftFilters: Record<string, string[]>;
   rightFilters: Record<string, string[]>;
+  /**
+   * Быстрый предпросмотр: до 5 строк склейки, умеренный TOP на источниках, без группировки по колонке.
+   * Лимиты в теле запроса для preview игнорируются — задаются на сервере.
+   */
+  preview?: boolean;
   leftPeriodFilters?: Record<string, { from: string; to: string }>;
   rightPeriodFilters?: Record<string, { from: string; to: string }>;
   /** Value for the admin-configured shared date filter (fields come from SourceLink.sharedPeriodLink). */
@@ -265,8 +270,12 @@ export async function buildLinkedReport(
 
   const leftJoinColumn = getColumnDefOrThrow(leftSource.id, link.leftJoinField);
   const rightJoinColumn = getColumnDefOrThrow(rightSource.id, link.rightJoinField);
-  const mergedRowLimit = resolveMergedRowLimit(body);
-  const sourceRowLimit = resolveSourceRowLimit(body);
+
+  const isPreview = body.preview === true;
+  const mergedRowLimit = isPreview ? 5 : resolveMergedRowLimit(body);
+  const sourceRowLimit = isPreview
+    ? Math.min(500, DEFAULT_SOURCE_ROW_LIMIT)
+    : resolveSourceRowLimit(body);
 
   // Build trusted period filters from admin-configured sharedPeriodLink + user-supplied value
   const spl = link.sharedPeriodLink;
@@ -325,8 +334,9 @@ export async function buildLinkedReport(
   const warnings: string[] = [];
 
   if (
-    mergedRowLimit === LINKED_REPORT_ROW_UNLIMITED ||
-    sourceRowLimit === LINKED_REPORT_ROW_UNLIMITED
+    !isPreview &&
+    (mergedRowLimit === LINKED_REPORT_ROW_UNLIMITED ||
+      sourceRowLimit === LINKED_REPORT_ROW_UNLIMITED)
   ) {
     warnings.push(
       'Режим без лимитов: при необходимости SQL без TOP на источниках и/или без обрезки числа пар после склейки. Возможны очень большие выборки, долгое выполнение и высокая нагрузка на БД.',
@@ -388,7 +398,7 @@ export async function buildLinkedReport(
     ...rightColumns.map(column => buildLinkedColumn('right', rightSource.name, column)),
   ];
 
-  const aggKey = body.aggregateByColumnKey?.trim();
+  const aggKey = isPreview ? undefined : body.aggregateByColumnKey?.trim();
   if (!aggKey) {
     return { columns: baseColumns, data: mergedRows, warnings };
   }

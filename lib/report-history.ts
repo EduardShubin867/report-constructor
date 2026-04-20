@@ -5,12 +5,25 @@ import Database from 'better-sqlite3';
 import type { NextRequest, NextResponse } from 'next/server';
 import type {
   ArtifactPayload,
+  AssistantMessageTone,
   SavedChatAssistantMessage,
   SavedChatSession,
   SavedChatSummary,
   SavedChatTurn,
   SavedChatTurnInput,
 } from '@/lib/report-history-types';
+
+const ALLOWED_TONES: ReadonlySet<AssistantMessageTone> = new Set(['info', 'warning', 'error']);
+
+function safeTone(value: unknown): AssistantMessageTone | undefined {
+  return typeof value === 'string' && ALLOWED_TONES.has(value as AssistantMessageTone)
+    ? (value as AssistantMessageTone)
+    : undefined;
+}
+
+function safeDetail(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+}
 
 const VIEWER_COOKIE_NAME = 'constructor_viewer_id';
 const MAX_CHATS_PER_VIEWER = 6;
@@ -94,6 +107,8 @@ function normalizeAssistantMessage(
   const suggestions = safeStringArray(assistant?.suggestions);
   const text = assistant?.text?.trim() || fallbackText;
 
+  const tone = safeTone((assistant as { tone?: unknown } | undefined)?.tone);
+
   if (assistant?.kind === 'artifact' && assistant.artifact && isArtifactPayload(assistant.artifact)) {
     const artifact = normalizeArtifactPayload(assistant.artifact);
     return {
@@ -101,13 +116,17 @@ function normalizeAssistantMessage(
       text: text || artifact.explanation || 'Отчёт сформирован.',
       suggestions,
       artifact,
+      ...(tone ? { tone } : {}),
     };
   }
 
+  const detail = safeDetail((assistant as { detail?: unknown } | undefined)?.detail);
   return {
     kind: 'text',
     text: text || 'Ответ сформирован.',
     suggestions,
+    ...(tone ? { tone } : {}),
+    ...(detail ? { detail } : {}),
   };
 }
 
@@ -304,7 +323,7 @@ function pruneViewerChats(viewerId: string): void {
       `SELECT id
        FROM report_sessions
        WHERE viewer_id = @viewerId
-       ORDER BY updated_at DESC
+       ORDER BY updated_at DESC, created_at DESC, rowid DESC
        LIMIT -1 OFFSET @offset`,
     )
     .all({ viewerId, offset: MAX_CHATS_PER_VIEWER }) as { id: string }[];

@@ -39,11 +39,14 @@ export async function POST(request: NextRequest) {
     const filters = body.filters ?? {};
     const pool = await getPoolForSource(source);
 
+    const isPreview = body.preview === true;
+
     if (groupBy.length > 0) {
       // --- GROUPED MODE ---
       const includeContractCount = body.includeContractCount !== false;
       const { select, joins, groupByClause } = buildGroupedSelectAndJoins(cols, groupBy, sourceId, {
         includeContractCount,
+        columnAggregations: body.columnAggregations,
       });
       const sortDirRaw = body.sortDirection;
       const sortDir =
@@ -57,22 +60,25 @@ export async function POST(request: NextRequest) {
           ? `ORDER BY [${sortCol}] ${sortDir}`
           : `ORDER BY [${groupBy[0]}]`;
 
-      // COUNT of groups (needs JOINs if groupBy references FK-derived cols)
-      const countReq = pool.request();
-      const where = buildGenericWhere(countReq, filters, source, body.periodFilters);
-      const countResult = await queryWithTimeout(countReq,
-        `SELECT COUNT(*) AS total FROM (
-           SELECT 1 AS [_grp] FROM ${tableRef}
-           ${joins}
-           ${where}
-           ${groupByClause}
-         ) AS sub`,
-        TIMEOUT.REPORT,
-      );
-      const total = (countResult.recordset[0] as { total: number }).total;
+      // COUNT of groups — skipped for preview (expensive subquery wrapping GROUP BY)
+      let total = 0;
+      if (!isPreview) {
+        const countReq = pool.request();
+        const whereCount = buildGenericWhere(countReq, filters, source, body.periodFilters);
+        const countResult = await queryWithTimeout(countReq,
+          `SELECT COUNT(*) AS total FROM (
+             SELECT 1 AS [_grp] FROM ${tableRef}
+             ${joins}
+             ${whereCount}
+             ${groupByClause}
+           ) AS sub`,
+          TIMEOUT.REPORT,
+        );
+        total = (countResult.recordset[0] as { total: number }).total;
+      }
 
       const dataReq = pool.request();
-      buildGenericWhere(dataReq, filters, source, body.periodFilters);
+      const where = buildGenericWhere(dataReq, filters, source, body.periodFilters);
       dataReq.input('offset', sql.Int, offset);
       dataReq.input('pageSize', sql.Int, pageSize);
 
@@ -87,11 +93,12 @@ export async function POST(request: NextRequest) {
         TIMEOUT.REPORT,
       );
 
+      if (isPreview) total = dataResult.recordset.length;
       return NextResponse.json({ data: dataResult.recordset, total, page, pageSize });
     }
 
     // --- DETAIL MODE ---
-    // COUNT without JOINs (filters use subqueries for FK)
+    // COUNT is a simple table scan — fast even for preview, so always run it.
     const countReq = pool.request();
     const where = buildGenericWhere(countReq, filters, source, body.periodFilters);
     const countResult = await queryWithTimeout(countReq,

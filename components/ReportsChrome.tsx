@@ -13,6 +13,7 @@ interface ReportsChromeProps {
   onCreateReport: () => void;
   headerActions?: React.ReactNode;
   children: React.ReactNode;
+  fullHeight?: boolean;
 }
 
 const CHAT_HREF = '/reports/chat';
@@ -45,6 +46,7 @@ export default function ReportsChrome({
   onCreateReport,
   headerActions,
   children,
+  fullHeight = false,
 }: ReportsChromeProps) {
   const pathname = usePathname();
   const tab: ReportsTab = pathname?.startsWith(LINKED_HREF)
@@ -228,9 +230,15 @@ export default function ReportsChrome({
         )}
       </AnimatePresence>
 
-      <main className="min-h-[calc(100vh-4rem)] flex-1 bg-background p-4 sm:p-6 xl:px-8">
-        <div className="mx-auto max-w-[112rem]">{children}</div>
-      </main>
+      {fullHeight ? (
+        <main className="h-[calc(100vh-4rem)] overflow-hidden bg-background">
+          {children}
+        </main>
+      ) : (
+        <main className="min-h-[calc(100vh-4rem)] flex-1 bg-background p-4 sm:p-6 xl:px-8">
+          <div className="mx-auto max-w-[112rem]">{children}</div>
+        </main>
+      )}
     </div>
   );
 }

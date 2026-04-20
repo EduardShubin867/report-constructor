@@ -43,3 +43,34 @@ export function startOfDay(date: Date): Date {
 export function getTodayDateValue(date = new Date()): string {
   return formatDateValue(startOfDay(date));
 }
+
+/**
+ * Парсит дату, введённую руками. Поддерживает форматы:
+ *   - `dd.MM.yyyy`, `d.M.yyyy`, `dd.MM.yy` (и с `/` или `-` вместо `.`)
+ *   - `yyyy-MM-dd`
+ * Возвращает строку в формате `YYYY-MM-DD` или undefined, если дата невалидна.
+ */
+export function parseManualDateInput(input: string): string | undefined {
+  const trimmed = input.trim();
+  if (!trimmed) return undefined;
+
+  if (DATE_VALUE_RE.test(trimmed)) {
+    return parseDateValue(trimmed) ? trimmed : undefined;
+  }
+
+  const parts = trimmed.split(/[.\-/\s]+/).filter(Boolean);
+  if (parts.length !== 3) return undefined;
+
+  const [dayStr, monthStr, yearStr] = parts;
+  if (!/^\d{1,2}$/.test(dayStr) || !/^\d{1,2}$/.test(monthStr) || !/^\d{2}(\d{2})?$/.test(yearStr)) {
+    return undefined;
+  }
+
+  const day = Number(dayStr);
+  const month = Number(monthStr);
+  let year = Number(yearStr);
+  if (yearStr.length === 2) year += year >= 70 ? 1900 : 2000;
+
+  const iso = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  return parseDateValue(iso) ? iso : undefined;
+}

@@ -41,6 +41,8 @@ export default function SourceEditor({
     setFkFilterTier,
     toggleGroupable,
     togglePeriodFilter,
+    setColumnLabel,
+    setTableDisplayName,
     toggleManualReport,
     setFkFilterPanelOpen,
     addFkFilter,
@@ -237,6 +239,7 @@ export default function SourceEditor({
             rescanMsg={rescanMsg}
             onToggleManualReport={toggleManualReport}
             onRescan={handleRescan}
+            onSetTableDisplayName={setTableDisplayName}
             columnActions={{
               onSetAllColumnFilterTier: setAllColumnFilterTier,
               onSetAllGroupable: setAllGroupable,
@@ -245,6 +248,7 @@ export default function SourceEditor({
               onToggleGroupable: toggleGroupable,
               onTogglePeriodFilter: togglePeriodFilter,
               onToggleHidden: toggleHidden,
+              onSetColumnLabel: setColumnLabel,
             }}
             foreignKeyActions={{
               fkFilterOpen,

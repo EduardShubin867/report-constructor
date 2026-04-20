@@ -1,6 +1,29 @@
-import { Bot } from 'lucide-react';
+import { Bot, CircleAlert, TriangleAlert } from 'lucide-react';
+import { useState, type ReactElement } from 'react';
 import AgentArtifactCard from '@/components/AgentArtifactCard';
-import type { SavedChatTurn } from '@/lib/report-history-types';
+import type { AssistantMessageTone, SavedChatTurn } from '@/lib/report-history-types';
+
+type ToneStyles = {
+  panel: string;
+  chip: string;
+  icon: ReactElement;
+  label: string;
+};
+
+const TONE_STYLES: Record<Exclude<AssistantMessageTone, 'info'>, ToneStyles> = {
+  warning: {
+    panel: 'border-amber-500/30 bg-amber-50/60',
+    chip: 'bg-amber-500/15 text-amber-800',
+    icon: <TriangleAlert className="h-3.5 w-3.5" strokeWidth={2.1} />,
+    label: 'Нет данных',
+  },
+  error: {
+    panel: 'border-error/30 bg-error-container/40',
+    chip: 'bg-error/15 text-error',
+    icon: <CircleAlert className="h-3.5 w-3.5" strokeWidth={2.1} />,
+    label: 'Не получилось',
+  },
+};
 
 type Props = {
   turn: SavedChatTurn;
@@ -21,7 +44,11 @@ export default function AgentChatAssistantMessage({
   onRefine,
   onPickSuggestion,
 }: Props) {
+  const [detailOpen, setDetailOpen] = useState(false);
   const artifact = turn.assistant.kind === 'artifact' ? turn.assistant.artifact : null;
+  const tone = turn.assistant.tone ?? 'info';
+  const toneStyles = tone !== 'info' ? TONE_STYLES[tone] : null;
+  const detail = turn.assistant.kind === 'text' ? turn.assistant.detail : undefined;
 
   return (
     <div className={artifact ? 'w-full max-w-none space-y-3' : 'max-w-[46rem] space-y-3'}>
@@ -36,14 +63,36 @@ export default function AgentChatAssistantMessage({
           onRefine={onRefine}
         />
       ) : (
-        <div className="ui-panel max-w-[46rem] rounded-[28px] px-5 py-4 text-sm leading-6 text-on-surface">
+        <div
+          className={`ui-panel max-w-[46rem] rounded-[28px] px-5 py-4 text-sm leading-6 text-on-surface ${toneStyles?.panel ?? ''}`}
+        >
           <div className="mb-2 flex items-center gap-2">
-            <span className="ui-chip-accent inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]">
-              <Bot className="h-3.5 w-3.5" strokeWidth={2.1} />
-              Ответ
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                toneStyles?.chip ?? 'ui-chip-accent'
+              }`}
+            >
+              {toneStyles?.icon ?? <Bot className="h-3.5 w-3.5" strokeWidth={2.1} />}
+              {toneStyles?.label ?? 'Ответ'}
             </span>
           </div>
-          <p>{turn.assistant.text}</p>
+          <p className="whitespace-pre-line">{turn.assistant.text}</p>
+          {detail ? (
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={() => setDetailOpen(open => !open)}
+                className="ui-button-ghost rounded-md px-2 py-1 text-[11px]"
+              >
+                {detailOpen ? 'Скрыть детали' : 'Показать детали'}
+              </button>
+              {detailOpen ? (
+                <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-words rounded-lg bg-surface-container/60 p-3 text-[11px] leading-5 text-on-surface-variant">
+                  {detail}
+                </pre>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       )}
 

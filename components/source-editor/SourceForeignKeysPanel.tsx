@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button';
+import { getSourceTableDisplayName } from '@/lib/schema/display-name';
 import { cn } from '@/lib/utils';
 import type {
   DataSource,
@@ -65,6 +66,7 @@ export default function SourceForeignKeysPanel({
           const isOpen = !!fkFilterOpen[panelKey];
           const hasFilter = !!foreignKey.filterConfig;
           const filterConfig = foreignKey.filterConfig ?? { displayField: '', label: '' };
+          const targetTableLabel = getSourceTableDisplayName(source, foreignKey.targetTable);
 
           return (
             <div
@@ -75,7 +77,7 @@ export default function SourceForeignKeysPanel({
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-medium text-on-surface">
-                      Справочник{' '}
+                      Справочник <span className="text-on-surface">{targetTableLabel}</span>{' '}
                       <span className="font-mono text-emerald-400/90">
                         [{source.schema}].[{foreignKey.targetTable}]
                       </span>

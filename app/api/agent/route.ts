@@ -1,9 +1,12 @@
 import { NextRequest } from 'next/server';
+import { randomUUID } from 'node:crypto';
+import type { ModelMessage } from 'ai';
 import { orchestrate } from '@/lib/agents/orchestrator';
 import type { AgentEvent } from '@/lib/agents/types';
 import type { AgentResponseOutput } from '@/lib/agents/agent-response-schema';
 import { recordAgentRun } from '@/lib/agent-analytics';
 import { getBusinessToday } from '@/lib/business-time';
+import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120; // seconds — agent does multiple LLM roundtrips
@@ -22,14 +25,20 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: 'OPENROUTER_API_KEY не настроен' }, { status: 500 });
   }
 
-  let body: { query: string; previousSql?: string; retryError?: string; skipAutoRowLimit?: boolean };
+  let body: {
+    query: string;
+    previousSql?: string;
+    retryError?: string;
+    skipAutoRowLimit?: boolean;
+    history?: ModelMessage[];
+  };
   try {
     body = await request.json();
   } catch {
     return Response.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const { query, previousSql, retryError, skipAutoRowLimit } = body;
+  const { query, previousSql, retryError, skipAutoRowLimit, history } = body;
   if (!query?.trim()) {
     return Response.json({ error: 'Запрос не может быть пустым' }, { status: 400 });
   }
@@ -37,33 +46,46 @@ export async function POST(request: NextRequest) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
+      const requestId = randomUUID();
       const events: AgentEvent[] = [];
       const send = (event: AgentEvent) => {
-        events.push(event);
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+        const enriched: AgentEvent = event.id ? event : { ...event, id: randomUUID() };
+        events.push(enriched);
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(enriched)}\n\n`));
       };
 
       const startTime = Date.now();
-      console.log('[Agent] SSE request started');
+      logger.info('agent.request.start', 'SSE request started', { requestId });
 
       try {
         const today = getBusinessToday();
 
         await orchestrate({
           ctx: {
+            requestId,
             today,
             query,
             previousSql,
             retryError,
             ...(skipAutoRowLimit === true ? { skipAutoRowLimit: true } : {}),
+            ...(Array.isArray(history) && history.length > 0 ? { history } : {}),
           },
           send,
         });
       } catch (err) {
-        console.error(`[Agent] Error after ${((Date.now() - startTime) / 1000).toFixed(1)}s:`, err);
+        const durationMs = Date.now() - startTime;
+        logger.error('agent.request', 'orchestrate threw', {
+          requestId,
+          durationMs,
+          error: err instanceof Error ? err.message : String(err),
+        });
         const message = err instanceof Error ? err.message : 'Внутренняя ошибка сервера';
         send({ type: 'error', error: message });
       } finally {
+        logger.info('agent.request.end', 'SSE request finished', {
+          requestId,
+          durationMs: Date.now() - startTime,
+        });
         recordAgentRun({
           userQuery: query,
           events,

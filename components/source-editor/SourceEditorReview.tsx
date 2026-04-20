@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button';
+import { getTableDisplayName } from '@/lib/schema/display-name';
 import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
 import type { DataSource, TableSchema } from '@/lib/schema/types';
@@ -18,6 +19,7 @@ interface SourceEditorReviewProps {
   rescanMsg: Record<string, string>;
   onToggleManualReport: () => void;
   onRescan: (tableName: string) => void;
+  onSetTableDisplayName: (tableIdx: number, label: string) => void;
   columnActions: Omit<SourceColumnsTableProps, 'source' | 'mainTable'>;
   foreignKeyActions: Omit<SourceForeignKeysPanelProps, 'source' | 'mainTable'>;
 }
@@ -31,15 +33,20 @@ export default function SourceEditorReview({
   rescanMsg,
   onToggleManualReport,
   onRescan,
+  onSetTableDisplayName,
   columnActions,
   foreignKeyActions,
 }: SourceEditorReviewProps) {
+  const mainTableIdx = mainTable ? source.tables.indexOf(mainTable) : -1;
+
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
       {mainTable && (
         <div>
           <div className="mb-2 flex flex-wrap items-center gap-2">
-            <h3 className="text-sm font-semibold text-on-surface">{mainTable.name}</h3>
+            <h3 className="text-sm font-semibold text-on-surface">
+              {getTableDisplayName(mainTable)}
+            </h3>
             {mainTable.alias && (
               <span className="rounded bg-surface-container px-1.5 py-0.5 text-xs text-on-surface-variant">
                 alias: {mainTable.alias}
@@ -96,6 +103,27 @@ export default function SourceEditorReview({
             )}
           </div>
 
+          <div className="mb-3 grid gap-2 rounded-lg border border-outline-variant/15 bg-surface-container-low/40 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <label className="block">
+              <span className="mb-1 block text-[11px] text-on-surface-variant">
+                Название в интерфейсе
+              </span>
+              <input
+                type="text"
+                value={mainTable.displayName ?? ''}
+                onChange={event => onSetTableDisplayName(mainTableIdx, event.target.value)}
+                placeholder={mainTable.name}
+                className="ui-field w-full rounded-lg px-3 py-2 text-sm focus:outline-none"
+              />
+            </label>
+            <div className="rounded-lg border border-outline-variant/10 bg-surface-container-lowest px-3 py-2 text-xs text-on-surface-variant">
+              <div className="text-[11px] uppercase tracking-wide text-on-surface-variant/70">
+                SQL-имя
+              </div>
+              <div className="mt-1 font-mono text-on-surface">{mainTable.name}</div>
+            </div>
+          </div>
+
           {rescanMsg[mainTable.name] && (
             <div
               className={`mb-2 rounded px-2 py-1 text-xs ${
@@ -116,15 +144,35 @@ export default function SourceEditorReview({
       {refTables.length > 0 && (
         <div>
           <h4 className="mb-1 text-xs text-on-surface-variant/60">Справочные таблицы</h4>
-          <div className="flex flex-wrap gap-2">
-            {refTables.map(table => (
-              <span
-                key={table.name}
-                className="rounded border border-outline-variant/15 bg-surface-container-low/50 px-2 py-1 text-xs text-on-surface"
-              >
-                {table.name}
-              </span>
-            ))}
+          <div className="space-y-2">
+            {refTables.map(table => {
+              const tableIdx = source.tables.indexOf(table);
+              return (
+                <div
+                  key={table.name}
+                  className="grid gap-2 rounded-lg border border-outline-variant/15 bg-surface-container-low/40 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
+                >
+                  <label className="block">
+                    <span className="mb-1 block text-[11px] text-on-surface-variant">
+                      Название в интерфейсе
+                    </span>
+                    <input
+                      type="text"
+                      value={table.displayName ?? ''}
+                      onChange={event => onSetTableDisplayName(tableIdx, event.target.value)}
+                      placeholder={table.name}
+                      className="ui-field w-full rounded-lg px-3 py-2 text-sm focus:outline-none"
+                    />
+                  </label>
+                  <div className="rounded-lg border border-outline-variant/10 bg-surface-container-lowest px-3 py-2 text-xs text-on-surface-variant">
+                    <div className="text-[11px] uppercase tracking-wide text-on-surface-variant/70">
+                      SQL-имя
+                    </div>
+                    <div className="mt-1 font-mono text-on-surface">{table.name}</div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

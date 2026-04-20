@@ -12,6 +12,8 @@ export interface ColumnDef {
   sqlExpr?: string;
   /** If true, column is available as a GROUP BY dimension */
   groupable?: boolean;
+  /** Display name for the column's group (source table) in tree views */
+  groupLabel?: string;
 }
 
 /**

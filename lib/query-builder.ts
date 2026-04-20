@@ -24,7 +24,13 @@ export interface GenericReportRequest {
   sortDirection?: 'asc' | 'desc';
   page?: number;
   pageSize?: number;
+  /** When true, skip COUNT query and return total = data.length (for live preview). */
+  preview?: boolean;
+  /** Per-column aggregation override for grouped mode. Default: 'sum'. */
+  columnAggregations?: Record<string, AggregationFn>;
 }
+
+export type AggregationFn = 'sum' | 'avg' | 'count' | 'min' | 'max';
 
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
@@ -278,9 +284,10 @@ export function buildGroupedSelectAndJoins(
   cols: string[],
   groupBy: string[],
   sourceId: string,
-  options?: { includeContractCount?: boolean },
+  options?: { includeContractCount?: boolean; columnAggregations?: Record<string, AggregationFn> },
 ): { select: string; joins: string; groupByClause: string } {
   const includeContractCount = options?.includeContractCount !== false;
+  const columnAggregations = options?.columnAggregations ?? {};
   const source = getSource(sourceId);
   const table = getMainTable(source);
   const alias = table.alias ?? 'm';
@@ -305,7 +312,8 @@ export function buildGroupedSelectAndJoins(
       selectParts.push(col.sqlExpr ? `${col.sqlExpr} AS [${col.key}]` : `${alias}.[${col.key}]`);
       groupByExprs.push(expr);
     } else if (col.type === 'number') {
-      selectParts.push(`SUM(${expr}) AS [${col.key}]`);
+      const fn = (columnAggregations[col.key] ?? 'sum').toUpperCase();
+      selectParts.push(`${fn}(${expr}) AS [${col.key}]`);
     }
   }
 

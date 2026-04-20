@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react';
 import { AnimatePresence, LayoutGroup } from 'framer-motion';
+import type { ModelMessage } from 'ai';
 import type { AgentResponse, SSEEvent } from '@/app/api/agent/route';
 import type { QueryResult } from '@/app/api/query/route';
 import AgentArtifactModal from '@/components/AgentArtifactModal';
@@ -403,6 +404,7 @@ export default function AgentChatWorkspace() {
     signal: AbortSignal,
     retryError: string | undefined,
     unlimitedRows: boolean,
+    history: ModelMessage[],
   ): Promise<AgentResponse> {
     appendDebugEntry(
       'client',
@@ -424,6 +426,7 @@ export default function AgentChatWorkspace() {
         previousSql: prevSql,
         retryError,
         ...(unlimitedRows ? { skipAutoRowLimit: true } : {}),
+        ...(history.length > 0 ? { history } : {}),
       }),
       signal,
     });
@@ -442,6 +445,7 @@ export default function AgentChatWorkspace() {
     let buffer = '';
     let result: AgentResponse | null = null;
     let streamError: string | null = null;
+    const seenEventIds = new Set<string>();
 
     while (true) {
       const { done, value } = await reader.read();
@@ -461,6 +465,11 @@ export default function AgentChatWorkspace() {
           event = JSON.parse(jsonStr) as SSEEvent;
         } catch {
           continue;
+        }
+
+        if (event.id) {
+          if (seenEventIds.has(event.id)) continue;
+          seenEventIds.add(event.id);
         }
 
         switch (event.type) {
@@ -519,6 +528,14 @@ export default function AgentChatWorkspace() {
             );
             result = event.data as unknown as AgentResponse;
             break;
+          case 'trace':
+            appendDebugEntry(
+              (event.scope as DebugScope) ?? 'orchestrator',
+              event.message,
+              'info',
+              event.data ?? (typeof event.durationMs === 'number' ? { durationMs: event.durationMs } : undefined),
+            );
+            break;
           case 'error':
             appendDebugEntry('error', `Ошибка SSE: ${event.error}`, 'error');
             streamError = event.error;
@@ -539,6 +556,8 @@ export default function AgentChatWorkspace() {
     signal: AbortSignal,
     retryError: string | undefined,
     unlimitedRows: boolean,
+    history: ModelMessage[],
+    alreadyRetriedEmpty = false,
   ): Promise<SavedChatAssistantMessage> {
     if (retry > 0) {
       setPhase('retrying');
@@ -557,7 +576,7 @@ export default function AgentChatWorkspace() {
       });
     }
 
-    const agentData = await callAgent(text, prevSql, retry, signal, retryError, unlimitedRows);
+    const agentData = await callAgent(text, prevSql, retry, signal, retryError, unlimitedRows, history);
 
     if (!agentData.sql) {
       appendDebugEntry('result', 'Агент завершил ответ без SQL', 'warn', {
@@ -605,14 +624,23 @@ export default function AgentChatWorkspace() {
         const retryHint = forceRetry
           ? `${executionError}\n\nПодсказка: если ошибка связана с городом, территорией или территориальным регионом, попробуй lookup_territory и фильтрацию через LEFT JOIN [dbo].[Территории] AS ter ON m.[ID_ТерриторияИспользованияТС] = ter.[ID] вместо прямого обращения к колонке основной таблицы.`
           : executionError;
-        return runAttempt(text, agentData.sql, retry + 1, signal, retryHint, unlimitedRows);
+        return runAttempt(text, agentData.sql, retry + 1, signal, retryHint, unlimitedRows, history, alreadyRetriedEmpty);
       }
-      throw new Error(executionError);
+      setIsRetrying(false);
+      setStepperState(4, '');
+      setPhase('done');
+      return {
+        kind: 'text',
+        tone: 'error',
+        text: 'Не удалось построить рабочий запрос. Попробуйте переформулировать вопрос или уточнить фильтры.',
+        suggestions: agentData.suggestions ?? [],
+        detail: `${executionError}\n\nSQL:\n${agentData.sql}`,
+      };
     }
 
-    if (queryData.rowCount === 0 && retry < MAX_RETRIES) {
+    if (queryData.rowCount === 0 && !alreadyRetriedEmpty) {
       setPhase('self-checking');
-      appendDebugEntry('query', 'SQL отработал, но вернул 0 строк. Запускаю самокоррекцию', 'warn', {
+      appendDebugEntry('query', 'SQL отработал, но вернул 0 строк. Запускаю одну самокоррекцию', 'warn', {
         retry: retry + 1,
       });
       return runAttempt(
@@ -620,9 +648,25 @@ export default function AgentChatWorkspace() {
         agentData.sql,
         retry + 1,
         signal,
-        'EMPTY: Запрос выполнился успешно, но вернул 0 строк. Вероятно, условия WHERE слишком жёсткие или значения фильтров неверны (неправильный код ДГ, формат даты, регистр). Если запрос связан с городом, территорией или территориальным регионом, проверь значения через lookup_territory и попробуй фильтрацию через JOIN с [dbo].[Территории] вместо прямого фильтра по основной таблице.',
+        'EMPTY: Запрос выполнился успешно, но вернул 0 строк. Проверь только конкретные ошибки: опечатка в коде ДГ, неверный регистр строки, не тот справочник. Если запрос связан с городом/территорией — попробуй JOIN с [dbo].[Территории] вместо прямого фильтра. Если после проверки ты уверен что фильтры корректны — верни тот же SQL, это валидный результат (данных действительно нет).',
         unlimitedRows,
+        history,
+        true,
       );
+    }
+
+    if (queryData.rowCount === 0) {
+      appendDebugEntry('query', 'SQL вернул 0 строк после самокоррекции — возвращаю текстовый ответ', 'warn');
+      setIsRetrying(false);
+      setStepperState(4, '');
+      setPhase('done');
+      return {
+        kind: 'text',
+        tone: 'warning',
+        text: 'По вашему запросу данных не нашлось. Попробуйте расширить период или ослабить фильтры.',
+        suggestions: agentData.suggestions ?? [],
+        detail: agentData.sql,
+      };
     }
 
     appendDebugEntry('query', 'SQL успешно выполнен', 'success', {
@@ -695,6 +739,24 @@ export default function AgentChatWorkspace() {
     const queryContext = followUpContext;
     setFollowUpContext(null);
 
+    const history: ModelMessage[] = (activeChat?.turns ?? []).flatMap(turn => {
+      const assistantContent = turn.assistant.kind === 'artifact'
+        ? JSON.stringify({
+            sql: turn.assistant.artifact.sql,
+            explanation: turn.assistant.text,
+            suggestions: turn.assistant.suggestions ?? [],
+          })
+        : JSON.stringify({
+            sql: '',
+            explanation: turn.assistant.text,
+            suggestions: turn.assistant.suggestions ?? [],
+          });
+      return [
+        { role: 'user' as const, content: turn.userQuery },
+        { role: 'assistant' as const, content: assistantContent },
+      ];
+    });
+
     try {
       const assistant = await runAttempt(
         trimmedQuery,
@@ -703,6 +765,7 @@ export default function AgentChatWorkspace() {
         controller.signal,
         undefined,
         skipAutoRowLimit,
+        history,
       );
 
       const localTurn: SavedChatTurn = {

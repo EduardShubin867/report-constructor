@@ -21,6 +21,8 @@ interface MultiSelectProps {
   loading?: boolean;
   /** Вызывается при раскрытии (true) и закрытии (false) списка. */
   onOpenChange?: (open: boolean) => void;
+  /** 'xs' makes label and trigger use text-xs to match compact column picker style */
+  size?: 'sm' | 'xs';
 }
 
 const ROW_HEIGHT = 36;
@@ -34,6 +36,7 @@ export default function MultiSelect({
   label,
   loading,
   onOpenChange,
+  size = 'sm',
 }: MultiSelectProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -97,14 +100,15 @@ export default function MultiSelect({
 
   return (
     <div className={open ? 'z-30' : undefined}>
-      {label && <label className="mb-1 block text-sm font-medium text-on-surface">{label}</label>}
+      {label && <label className={cn('mb-1 block font-medium text-on-surface', size === 'xs' ? 'text-xs' : 'text-sm')}>{label}</label>}
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
             type="button"
             variant="outline"
             className={cn(
-              'h-auto w-full justify-between rounded-xl px-3 py-2.5 text-left text-sm font-normal',
+              'h-auto w-full justify-between rounded-xl px-3 text-left font-normal',
+              size === 'xs' ? 'py-1.5 text-xs' : 'py-2.5 text-sm',
               'border-input bg-background text-on-surface hover:bg-background',
               'focus-visible:border-ring focus-visible:ring-ring/50',
               loading && !open

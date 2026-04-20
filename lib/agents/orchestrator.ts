@@ -12,6 +12,8 @@ import { getAllAgents, getAgent, resolveRouterModel, getAgentCatalog } from './r
 import { runAgent } from './runner';
 import { AGENT_DEBUG_ENABLED } from '@/lib/constants';
 import { createAppOpenRouter } from '@/lib/llm/openrouter-factory';
+import { pickDataSource } from './source-router';
+import { logger } from '@/lib/logger';
 
 /** Minimum match() score to route without LLM */
 const MATCH_THRESHOLD = 0.5;
@@ -49,6 +51,23 @@ export async function orchestrate(opts: OrchestratorOptions): Promise<void> {
     return;
   }
 
+  /* ── 0. Pick data source ───────────────────────────────────────── */
+  try {
+    const picked = await pickDataSource(ctx, send, opts.routerModel);
+    ctx.selectedSourceId = picked.sourceId;
+    send({ type: 'source_selected', sourceId: picked.sourceId, sourceName: picked.sourceName });
+  } catch (err) {
+    logger.error('orchestrator.source_routing', 'Source routing failed', {
+      requestId: ctx.requestId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    send({
+      type: 'error',
+      error: err instanceof Error ? err.message : 'Не удалось выбрать источник данных',
+    });
+    return;
+  }
+
   /* ── 1. Try match() scoring ─────────────────────────────────────── */
   const matched = tryMatchRouting(agents, ctx);
   send({
@@ -65,7 +84,11 @@ export async function orchestrate(opts: OrchestratorOptions): Promise<void> {
   });
 
   if (matched.selected) {
-    console.log(`[Orchestrator] Matched by score: ${matched.selected.name}`);
+    logger.info('orchestrator.match', 'Matched by score', {
+      requestId: ctx.requestId,
+      agent: matched.selected.name,
+      score: matched.candidates[0]?.score,
+    });
     send({
       type: 'debug',
       scope: 'orchestrator',
@@ -93,7 +116,11 @@ export async function orchestrate(opts: OrchestratorOptions): Promise<void> {
   const chosenName = await routeQueryLLM(ctx, send, opts.routerModel);
   const agent = getAgent(chosenName);
   if (!agent) {
-    console.warn(`[Orchestrator] LLM returned unknown agent "${chosenName}", falling back to ${agents[0].name}`);
+    logger.warn('orchestrator.llm_routing', 'LLM returned unknown agent, falling back', {
+      requestId: ctx.requestId,
+      returned: chosenName,
+      fallback: agents[0].name,
+    });
     send({
       type: 'debug',
       scope: 'orchestrator',
@@ -131,7 +158,11 @@ function tryMatchRouting(
         scored.push({ agent, score });
       }
     } catch (err) {
-      console.warn(`[Orchestrator] match() error for ${agent.name}:`, err);
+      logger.warn('orchestrator.match', 'match() threw', {
+        requestId: ctx.requestId,
+        agent: agent.name,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -144,7 +175,11 @@ function tryMatchRouting(
 
   // If top two have the same score → ambiguous → let LLM decide
   if (scored.length >= 2 && scored[0].score === scored[1].score) {
-    console.log(`[Orchestrator] Ambiguous match (${scored[0].agent.name} vs ${scored[1].agent.name}), falling back to LLM`);
+    logger.info('orchestrator.match', 'Ambiguous match — falling back to LLM', {
+      requestId: ctx.requestId,
+      candidates: scored.slice(0, 2).map(c => c.agent.name),
+      score: scored[0].score,
+    });
     return { selected: null, candidates: scored, reason: 'ambiguous' };
   }
 
@@ -212,7 +247,11 @@ ${agentList}
     });
 
     const name = text.trim();
-    console.log(`[Orchestrator] LLM routed to: ${name}`);
+    logger.info('orchestrator.llm_routing', 'LLM routed', {
+      requestId: ctx.requestId,
+      agent: name,
+      model: modelId,
+    });
     send({
       type: 'debug',
       scope: 'orchestrator',
@@ -221,7 +260,11 @@ ${agentList}
     });
     return name;
   } catch (err) {
-    console.error('[Orchestrator] LLM routing failed, using first agent:', err);
+    logger.error('orchestrator.llm_routing', 'LLM routing failed, using first agent', {
+      requestId: ctx.requestId,
+      fallback: catalog[0].name,
+      error: err instanceof Error ? err.message : String(err),
+    });
     send({
       type: 'debug',
       scope: 'orchestrator',

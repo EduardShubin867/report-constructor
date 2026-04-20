@@ -7,6 +7,7 @@
  */
 import { getDataSources } from '@/lib/schema';
 import { ALL_COLUMNS, COLUMN_LABEL_MAP, COLUMN_BY_SQL_EXPR, type ColumnDef, type ColumnType } from '@/lib/report-columns';
+import { getSourceTableDisplayName } from '@/lib/schema/display-name';
 import type { DataSource, TableSchema } from '@/lib/schema/types';
 
 /** Map schema type ('bit') to ColumnDef type ('boolean'). */
@@ -61,11 +62,12 @@ export function getVisibleColumnDefs(sourceId: string): ColumnDef[] {
       const known = COLUMN_BY_SQL_EXPR.get(sqlExpr);
       result.push({
         key: known?.key ?? `${fk.alias}_${field}`,
-        label: known?.label ?? `${fk.targetTable}: ${field}`,
+        label: known?.label ?? `${getSourceTableDisplayName(source, fk.targetTable)}: ${field}`,
         type: known?.type ?? 'string',
         joinKey: fk.alias,
         sqlExpr,
         groupable: known?.groupable,
+        groupLabel: getSourceTableDisplayName(source, fk.targetTable),
       });
     }
   }
@@ -116,7 +118,7 @@ export function getGroupByColumnDefs(sourceId: string): ColumnDef[] {
       if (!isDimensionType(type)) continue;
       result.push({
         key: known?.key ?? `${fk.alias}_${field}`,
-        label: known?.label ?? `${fk.targetTable}: ${field}`,
+        label: known?.label ?? `${getSourceTableDisplayName(source, fk.targetTable)}: ${field}`,
         type,
         joinKey: fk.alias,
         sqlExpr,

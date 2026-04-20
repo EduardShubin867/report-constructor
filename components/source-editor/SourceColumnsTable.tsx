@@ -20,6 +20,7 @@ export interface SourceColumnsTableProps {
   onToggleGroupable: (tableIdx: number, colIdx: number) => void;
   onTogglePeriodFilter: (tableIdx: number, colIdx: number) => void;
   onToggleHidden: (tableIdx: number, colIdx: number) => void;
+  onSetColumnLabel: (tableIdx: number, colIdx: number, label: string) => void;
 }
 
 const typeColors: Record<string, string> = {
@@ -39,6 +40,7 @@ export default function SourceColumnsTable({
   onToggleGroupable,
   onTogglePeriodFilter,
   onToggleHidden,
+  onSetColumnLabel,
 }: SourceColumnsTableProps) {
   const tableIdx = source.tables.indexOf(mainTable);
 
@@ -48,6 +50,7 @@ export default function SourceColumnsTable({
         <thead>
           <tr className="bg-surface-container text-xs text-on-surface-variant">
             <th className="px-3 py-2 text-left font-medium">Колонка</th>
+            <th className="px-3 py-2 text-left font-medium">Отображение</th>
             <th className="px-3 py-2 text-left font-medium">Тип</th>
             <th className="px-3 py-2 text-center font-medium">
               <div className="mx-auto flex max-w-[7rem] flex-col items-center gap-0.5">
@@ -124,6 +127,15 @@ export default function SourceColumnsTable({
                 }`}
               >
                 <td className="px-3 py-1.5 font-mono text-xs text-on-surface">{column.name}</td>
+                <td className="px-3 py-1.5">
+                  <input
+                    type="text"
+                    value={column.label ?? ''}
+                    onChange={e => onSetColumnLabel(tableIdx, colIdx, e.target.value)}
+                    placeholder={column.name}
+                    className="w-full rounded border border-outline-variant/30 bg-surface-container-lowest px-2 py-1 text-xs text-on-surface placeholder:text-on-surface-variant/50 focus:border-primary focus:outline-none"
+                  />
+                </td>
                 <td
                   className={`px-3 py-1.5 text-xs font-medium ${
                     typeColors[column.type] ?? 'text-on-surface-variant'

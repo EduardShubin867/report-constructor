@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import LinkedReportRoute from '@/components/LinkedReportRoute';
+import LinkedReportRoute from '@/components/linked-report';
 import { isLinkedReportUnlimitedRowsAllowed } from '@/lib/linked-report-unlimited-flag';
 import { loadSourceFilterOptions, type ManualReportSourcePayload } from '@/lib/report-filters-data';
 import { getDataSources, getSourceLinks } from '@/lib/schema';

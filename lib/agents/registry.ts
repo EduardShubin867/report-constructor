@@ -64,6 +64,17 @@ export function resolveRouterModel(override?: string): string {
     || FALLBACK_MODEL;
 }
 
+/**
+ * Resolve model for the `whenToUse` text generator (admin UI helper).
+ * Priority: override → OPENROUTER_WHEN_TO_USE_MODEL → OPENROUTER_MODEL → FALLBACK
+ */
+export function resolveWhenToUseGeneratorModel(override?: string): string {
+  return override
+    || process.env.OPENROUTER_WHEN_TO_USE_MODEL
+    || process.env.OPENROUTER_MODEL
+    || FALLBACK_MODEL;
+}
+
 /** Get a sub-agent by name */
 export function getAgent(name: string): SubAgentConfig | undefined {
   return agentMap.get(name);

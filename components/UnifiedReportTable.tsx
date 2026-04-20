@@ -46,6 +46,8 @@ interface UnifiedReportTableProps {
   clientGroupByColumnKey?: string | null;
   /** Не дублировать колонку группировки в каждой строке — только в шапке группы. */
   hideGroupColumnWhenGrouped?: boolean;
+  /** Fill parent container height instead of using viewport-based calc. Parent must have a constrained height. */
+  fillHeight?: boolean;
 }
 
 const PAGE_SIZES = [50, 100, 200, 500];
@@ -127,6 +129,7 @@ export default function UnifiedReportTable({
   mode,
   clientGroupByColumnKey = null,
   hideGroupColumnWhenGrouped = true,
+  fillHeight = false,
 }: UnifiedReportTableProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const tableScrollRef = useRef<HTMLDivElement>(null);
@@ -290,38 +293,24 @@ export default function UnifiedReportTable({
 
   if (showInitialSkeleton) {
     return (
-      <div className="ui-panel overflow-hidden rounded-[28px]">
-        <div className="animate-pulse">
-          <div className="h-20 border-b border-outline-variant/10 bg-surface-container-low/70" />
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div
-              key={i}
-              className={`h-9 border-b border-outline-variant/10 ${
-                i % 2 === 0
-                  ? 'bg-surface-container-lowest'
-                  : 'bg-surface-container-low/50'
-              }`}
-            />
-          ))}
-        </div>
+      <div className="animate-pulse">
+        <div className="h-8 border-b border-[#e7e5e3] bg-[#f5f5f4]" />
+        {Array.from({ length: 10 }).map((_, i) => (
+          <div key={i} className="h-8 border-b border-[#e7e5e3] bg-white" />
+        ))}
       </div>
     );
   }
 
   if (data.length === 0) {
     return (
-      <div className="ui-panel rounded-[28px] p-12 text-center">
-        <div className="mx-auto max-w-md">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-on-surface-variant">
-            Результат
+      <div className="flex h-full items-center justify-center p-8 text-center">
+        <div>
+          <p className="text-[13px] font-medium text-[#1c1b1a]">
+            {isServer ? 'По этим условиям ничего не нашлось' : 'В таблице пока нет данных'}
           </p>
-          <p className="mt-3 font-headline text-xl font-semibold text-on-surface">
-            {isServer
-              ? 'По этим условиям ничего не нашлось'
-              : 'В таблице пока нет данных'}
-          </p>
-          <p className="mt-2 text-sm leading-6 text-on-surface-variant">
-            Попробуйте убрать часть фильтров, изменить период или упростить группировку и набор колонок.
+          <p className="mt-1 text-xs text-[#75726e]">
+            Попробуйте убрать часть фильтров или изменить группировку.
           </p>
         </div>
       </div>
@@ -334,59 +323,11 @@ export default function UnifiedReportTable({
   };
 
   return (
-    <div className="ui-panel overflow-hidden rounded-[28px]">
-      <div className="border-b border-outline-variant/10 bg-surface-container-low/45 px-5 py-4">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              <span className="ui-chip-accent inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]">
-                Результат
-              </span>
-              <span className="ui-chip inline-flex items-center rounded-full px-3 py-1 text-xs font-medium">
-                {displayColumns.length}{' '}
-                {displayColumns.length === 1
-                  ? 'колонка'
-                  : displayColumns.length < 5
-                    ? 'колонки'
-                    : 'колонок'}
-              </span>
-              {totalPages > 1 ? (
-                <span className="ui-chip inline-flex items-center rounded-full px-3 py-1 text-xs font-medium">
-                  Страница {currentPage}/{totalPages}
-                </span>
-              ) : null}
-            </div>
-            <p className="text-sm text-on-surface-variant">
-              <strong className="text-lg font-semibold text-on-surface">
-              {rowCount.toLocaleString('ru-RU')}
-              </strong>{' '}
-              {pluralRecords(rowCount)}
-              {loading ? (
-                <span className="ml-2 text-on-surface-variant/70">· обновляем данные…</span>
-              ) : null}
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-          {warnings?.map(w => (
-            <span
-              key={w}
-              className="rounded-full border border-tertiary/15 bg-tertiary-fixed/70 px-3 py-1 text-xs text-tertiary"
-            >
-              {w}
-            </span>
-          ))}
-          </div>
-        </div>
-      </div>
-
-      <div
-        className="relative flex min-h-[19.5rem] flex-col"
-        style={{ height: 'calc(100dvh - 3.5rem - 200px)' }}
-      >
+    <div className={fillHeight ? 'flex h-full flex-col overflow-hidden' : 'flex flex-col overflow-hidden'}>
+      <div className="relative flex min-h-0 flex-1 flex-col">
         {loading && (
           <div
-            className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-background/35 backdrop-blur-[1px]"
+            className="pointer-events-none absolute inset-0 z-20 bg-white/50"
             role="status"
             aria-live="polite"
           >
@@ -398,20 +339,15 @@ export default function UnifiedReportTable({
           className="min-h-0 flex-1 overflow-auto [&::-webkit-scrollbar]:h-0"
           onScroll={() => syncScroll('table')}
         >
-          <table className="w-full text-sm">
+          <table className="w-full border-collapse">
             <thead>
               {table.getHeaderGroups().map(hg => (
-                <tr
-                  key={hg.id}
-                  className="sticky top-0 z-10 bg-surface-container-low/95 backdrop-blur-sm"
-                >
+                <tr key={hg.id} className="sticky top-0 z-10 border-b border-[#e7e5e3] bg-[#f5f5f4]">
                   {hg.headers.map(header => {
                     const colKey = header.column.id;
                     const clientSorted = sortable ? header.column.getIsSorted() : false;
                     const serverSorted =
-                      serverHeaderSort &&
-                      serverSortColumn === colKey &&
-                      serverSortDirection
+                      serverHeaderSort && serverSortColumn === colKey && serverSortDirection
                         ? serverSortDirection
                         : false;
                     const headerSortable = sortable || serverHeaderSort;
@@ -426,34 +362,20 @@ export default function UnifiedReportTable({
                               ? () => onServerSortClick?.(colKey)
                               : undefined
                         }
-                        className={`whitespace-nowrap px-5 py-3 text-left text-[11px] font-bold uppercase tracking-[0.16em] text-on-surface-variant ${
-                          headerSortable
-                            ? 'cursor-pointer select-none transition-colors hover:bg-surface-container-low'
-                            : ''
+                        className={`whitespace-nowrap px-3 py-1.5 text-left text-[11.5px] font-medium text-[#75726e] ${
+                          headerSortable ? 'cursor-pointer select-none hover:bg-[#efeeec]' : ''
                         }`}
                       >
                         <span className="inline-flex items-center gap-1">
-                          {flexRender(
-                            header.column.columnDef.header,
-                            header.getContext(),
-                          )}
+                          {flexRender(header.column.columnDef.header, header.getContext())}
                           {headerSortable && sortedIcon === 'asc' && (
-                            <ArrowUp
-                              className="h-3 w-3 text-primary"
-                              strokeWidth={2.2}
-                            />
+                            <ArrowUp className="h-3 w-3 text-[#3a5a7a]" strokeWidth={2.2} />
                           )}
                           {headerSortable && sortedIcon === 'desc' && (
-                            <ArrowDown
-                              className="h-3 w-3 text-primary"
-                              strokeWidth={2.2}
-                            />
+                            <ArrowDown className="h-3 w-3 text-[#3a5a7a]" strokeWidth={2.2} />
                           )}
                           {headerSortable && !sortedIcon && (
-                            <ArrowUpDown
-                              className="h-3 w-3 text-on-surface-variant opacity-30"
-                              strokeWidth={2.2}
-                            />
+                            <ArrowUpDown className="h-3 w-3 text-[#a8a5a0]" strokeWidth={2.2} />
                           )}
                         </span>
                       </th>
@@ -463,26 +385,18 @@ export default function UnifiedReportTable({
               ))}
             </thead>
 
-            <tbody className="divide-y divide-outline-variant/10">
+            <tbody>
               {isServer
                 ? data.map((row, i) => (
                     <tr
-                      key={
-                        row.ID != null && row.ID !== ''
-                          ? String(row.ID)
-                          : `p${page ?? 1}-r${i}`
-                      }
-                      className={`transition-colors hover:bg-primary-fixed/45 ${
-                        i % 2 === 0 ? 'bg-surface-container-lowest/82' : 'bg-surface-container-low/28'
-                      }`}
+                      key={row.ID != null && row.ID !== '' ? String(row.ID) : `p${page ?? 1}-r${i}`}
+                      className="border-b border-[#e7e5e3] hover:bg-[#f5f5f4]"
                     >
                       {columns.map(col => (
                         <td
                           key={col.key}
-                          className={`whitespace-nowrap px-5 py-2.5 text-xs text-on-surface ${
-                            numericKeys.has(col.key)
-                              ? 'text-right font-mono tabular-nums'
-                              : ''
+                          className={`whitespace-nowrap px-3 py-1.5 text-[12px] text-[#1c1b1a] ${
+                            numericKeys.has(col.key) ? 'text-right font-mono tabular-nums' : ''
                           }`}
                         >
                           {formatValue(row[col.key], col.type, col.integer)}
@@ -492,55 +406,33 @@ export default function UnifiedReportTable({
                   ))
                 : clientGroupSections
                   ? clientGroupSections.map(section => {
-                      const headerTitle =
-                        groupColumnMeta?.label ?? 'Значение связи';
-                      const headerValue =
-                        section.label.trim() === '' ? '(пусто)' : section.label;
+                      const headerTitle = groupColumnMeta?.label ?? 'Значение связи';
+                      const headerValue = section.label.trim() === '' ? '(пусто)' : section.label;
                       return (
                         <Fragment key={section.sk}>
-                          <tr className="bg-primary-fixed/55">
-                            <td
-                              colSpan={displayColumns.length}
-                              className="px-5 py-2.5 text-xs text-on-surface"
-                            >
+                          <tr className="border-b border-[#e7e5e3] bg-[#eaf0f6]">
+                            <td colSpan={displayColumns.length} className="px-3 py-1.5 text-[12px]">
                               <div className="flex flex-wrap items-baseline justify-between gap-2">
                                 <span>
-                                  <span className="font-semibold text-on-surface">
-                                    {headerTitle}
-                                  </span>
-                                  <span className="ml-1.5 font-mono text-on-surface-variant">
-                                    {headerValue}
-                                  </span>
+                                  <span className="font-medium text-[#2b4560]">{headerTitle}</span>
+                                  <span className="ml-1.5 font-mono text-[#3a5a7a]">{headerValue}</span>
                                 </span>
-                                <span className="text-on-surface-variant">
-                                  {section.rows.length.toLocaleString('ru-RU')}{' '}
-                                  {pluralRecords(section.rows.length)}
+                                <span className="text-[#75726e]">
+                                  {section.rows.length.toLocaleString('ru-RU')} {pluralRecords(section.rows.length)}
                                 </span>
                               </div>
                             </td>
                           </tr>
-                          {section.rows.map((row, rowIdx) => (
-                            <tr
-                              key={row.id}
-                              className={`transition-colors hover:bg-primary-fixed/45 ${
-                                rowIdx % 2 === 0
-                                  ? 'bg-surface-container-lowest/82'
-                                  : 'bg-surface-container-low/28'
-                              }`}
-                            >
+                          {section.rows.map(row => (
+                            <tr key={row.id} className="border-b border-[#e7e5e3] hover:bg-[#f5f5f4]">
                               {row.getVisibleCells().map(cell => (
                                 <td
                                   key={cell.id}
-                                  className={`whitespace-nowrap px-5 py-2.5 text-xs text-on-surface ${
-                                    numericKeys.has(cell.column.id)
-                                      ? 'text-right font-mono tabular-nums'
-                                      : ''
+                                  className={`whitespace-nowrap px-3 py-1.5 text-[12px] text-[#1c1b1a] ${
+                                    numericKeys.has(cell.column.id) ? 'text-right font-mono tabular-nums' : ''
                                   }`}
                                 >
-                                  {flexRender(
-                                    cell.column.columnDef.cell,
-                                    cell.getContext(),
-                                  )}
+                                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
                                 </td>
                               ))}
                             </tr>
@@ -549,29 +441,19 @@ export default function UnifiedReportTable({
                       );
                     })
                   : table.getRowModel().rows.map(row => (
-                    <tr
-                      key={row.id}
-                      className={`transition-colors hover:bg-primary-fixed/45 ${
-                        row.index % 2 === 0 ? 'bg-surface-container-lowest/82' : 'bg-surface-container-low/28'
-                      }`}
-                    >
-                      {row.getVisibleCells().map(cell => (
-                        <td
-                          key={cell.id}
-                          className={`whitespace-nowrap px-5 py-2.5 text-xs text-on-surface ${
-                            numericKeys.has(cell.column.id)
-                              ? 'text-right font-mono tabular-nums'
-                              : ''
-                          }`}
-                        >
-                          {flexRender(
-                            cell.column.columnDef.cell,
-                            cell.getContext(),
-                          )}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
+                      <tr key={row.id} className="border-b border-[#e7e5e3] hover:bg-[#f5f5f4]">
+                        {row.getVisibleCells().map(cell => (
+                          <td
+                            key={cell.id}
+                            className={`whitespace-nowrap px-3 py-1.5 text-[12px] text-[#1c1b1a] ${
+                              numericKeys.has(cell.column.id) ? 'text-right font-mono tabular-nums' : ''
+                            }`}
+                          >
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
             </tbody>
           </table>
         </div>
@@ -579,7 +461,7 @@ export default function UnifiedReportTable({
         {showFloatingScroll && (
           <div
             ref={floatingScrollRef}
-            className="flex-shrink-0 overflow-x-auto border-t border-outline-variant/15 bg-surface-container-lowest/90"
+            className="flex-shrink-0 overflow-x-auto border-t border-[#e7e5e3]"
             onScroll={() => syncScroll('floating')}
           >
             <div style={{ width: contentWidth, height: 1 }} />
@@ -588,9 +470,9 @@ export default function UnifiedReportTable({
       </div>
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-end gap-4 border-t border-outline-variant/10 bg-surface-container-low px-4 py-2">
-          <label className="flex items-center gap-1.5 text-xs text-on-surface-variant">
-            На странице:
+        <div className="flex flex-shrink-0 items-center justify-between border-t border-[#e7e5e3] bg-[#f5f5f4] px-3 py-1.5">
+          <label className="flex items-center gap-1.5 text-[11.5px] text-[#75726e]">
+            На стр:
             <AppSelect
               value={String(isServer ? pageSize : table.getState().pagination.pageSize)}
               onValueChange={value => {
@@ -599,8 +481,8 @@ export default function UnifiedReportTable({
                 else table.setPageSize(size);
               }}
               options={PAGE_SIZE_OPTIONS}
-              triggerClassName="ui-field h-7 min-w-16 rounded-lg px-2 py-1 text-xs"
-              contentClassName="min-w-16"
+              triggerClassName="h-6 min-w-14 rounded-md border border-[#e7e5e3] bg-white px-2 py-0.5 text-[11.5px]"
+              contentClassName="min-w-14"
               labelClassName="text-xs"
               ariaLabel="Выбор числа строк на странице"
             />
@@ -611,10 +493,10 @@ export default function UnifiedReportTable({
               type="button"
               onClick={() => goToPage(currentPage - 1)}
               disabled={currentPage <= 1}
-              className="ui-button-secondary rounded-lg px-2 py-1 disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-md px-1.5 py-1 text-[#75726e] disabled:opacity-40 hover:bg-[#efeeec]"
               aria-label="Предыдущая страница"
             >
-              <ArrowLeft className="h-3.5 w-3.5" strokeWidth={2.2} />
+              <ArrowLeft className="h-3.5 w-3.5" strokeWidth={2} />
             </button>
 
             {pageNumbers.map(p => (
@@ -622,10 +504,10 @@ export default function UnifiedReportTable({
                 key={p}
                 type="button"
                 onClick={() => goToPage(p)}
-                className={`h-7 w-7 rounded-lg text-xs transition-colors ${
+                className={`h-6 min-w-6 rounded-md px-1 text-[11.5px] transition-colors ${
                   p === currentPage
-                    ? 'ui-chip-accent font-semibold text-primary'
-                    : 'text-on-surface-variant hover:bg-surface-container-high'
+                    ? 'bg-[#3a5a7a] font-semibold text-white'
+                    : 'text-[#75726e] hover:bg-[#efeeec]'
                 }`}
               >
                 {p}
@@ -636,10 +518,10 @@ export default function UnifiedReportTable({
               type="button"
               onClick={() => goToPage(currentPage + 1)}
               disabled={currentPage >= totalPages}
-              className="ui-button-secondary rounded-lg px-2 py-1 disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-md px-1.5 py-1 text-[#75726e] disabled:opacity-40 hover:bg-[#efeeec]"
               aria-label="Следующая страница"
             >
-              <ArrowRight className="h-3.5 w-3.5" strokeWidth={2.2} />
+              <ArrowRight className="h-3.5 w-3.5" strokeWidth={2} />
             </button>
           </div>
         </div>

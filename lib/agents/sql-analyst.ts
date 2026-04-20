@@ -14,15 +14,21 @@ import { getDataSources } from '@/lib/schema';
 import { schemaToPrompt } from '@/lib/schema/to-prompt';
 
 function buildSystemPrompt(ctx: AgentContext): string {
-  const { today, skipAutoRowLimit } = ctx;
-  const schema = getDataSources().map(ds => schemaToPrompt(ds)).join('\n\n---\n\n');
+  const { today, skipAutoRowLimit, selectedSourceId } = ctx;
+  const allSources = getDataSources();
+  const activeSources = selectedSourceId
+    ? allSources.filter(ds => ds.id === selectedSourceId)
+    : allSources;
+  const sources = activeSources.length > 0 ? activeSources : allSources;
+  const schema = sources.map(ds => schemaToPrompt(ds)).join('\n\n---\n\n');
+  const sourceName = sources.length === 1 ? sources[0].name : 'выбранных источников';
   const limitNote = skipAutoRowLimit
     ? `
 
 Пользователь **отключил автоматический лимит 5000 строк** — система не добавит TOP 5000 к запросу; выборка может быть большой (ограничена только временем выполнения). Для смыслового «топ‑N» по сортировке по-прежнему указывай TOP N в SQL.
 `
     : '';
-  return `Ты — AI-аналитик, который пишет SQL-запросы для системы учёта маржи ОСАГО.
+  return `Ты — AI-аналитик, который пишет SQL-запросы по источнику: ${sourceName}.
 
 Сегодняшняя дата: ${today}
 СУБД: Microsoft SQL Server
@@ -52,8 +58,9 @@ ${getCriticalDatabaseRulesSection()}
 ### Самопроверка (ОБЯЗАТЕЛЬНО)
 
 ПЕРЕД финальным ответом с SQL вызови \`validate_query\` РОВНО ОДИН РАЗ с готовым запросом.
-- Если 0 строк — НЕ зацикливайся. Максимум ОДНА попытка исправить (ослабить фильтры или проверить значения). Итого validate_query вызывается не более 2 раз за весь диалог.
-- Если 0 строк в запросе про город/территорию — перепроверь \`lookup_territory\` и попробуй перейти с прямого фильтра основной таблицы на \`JOIN\` со справочником \`[dbo].[Территории]\`.
+- **0 строк — это валидный ответ**, если фильтры разумны и колонки правильные. Не «подгоняй» SQL ради наличия данных и не выдумывай новые условия. Верни SQL как есть и честно скажи в explanation, что данных по этим условиям нет.
+- Делай ВТОРУЮ попытку validate_query только если подозреваешь конкретную ошибку: опечатка в коде ДГ, неверный регистр строки, не тот справочник, не та колонка. Не более 2 вызовов validate_query на весь диалог.
+- Если 0 строк в запросе про город/территорию — перепроверь \`lookup_territory\` и попробуй перейти с прямого фильтра основной таблицы на \`JOIN\` со справочником \`[dbo].[Территории]\` (это конкретная ошибка, а не «нет данных»).
 - Если мало строк (< 5) — упомяни это в explanation
 - НЕ используй validate_query для «разведки» или итеративной разработки — сначала напиши полный SQL, потом проверь
 
@@ -129,7 +136,7 @@ canRetry — ТОЛЬКО в режиме исправления ошибки: f
 5. Если использовал подзапрос вместо WITH — **молчи об этом** в explanation; опиши только бизнес-содержание результата.
 
 ${getTextInstructionsCatalog({
-    activeSourceIds: getDataSources().map(ds => ds.id),
+    activeSourceIds: sources.map(ds => ds.id),
     agentName: 'sql-analyst',
   })}`;
 }

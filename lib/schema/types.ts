@@ -57,6 +57,8 @@ export interface ForeignKey {
 export interface TableSchema {
   /** Table name without schema, e.g. 'Журнал_ОСАГО_Маржа' */
   name: string;
+  /** Human-readable UI label for the table; falls back to name when omitted */
+  displayName?: string;
   /** SQL alias for FROM, e.g. 'm' */
   alias?: string;
   columns: ColumnSchema[];

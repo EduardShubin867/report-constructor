@@ -8,6 +8,7 @@ import { resolveAgentModel } from './registry';
 import { createAppOpenRouter } from '@/lib/llm/openrouter-factory';
 import { AGENT_DEBUG_ENABLED } from '@/lib/constants';
 import { buildAgentToolSet } from '@/lib/skills/registry';
+import { logger } from '@/lib/logger';
 import {
   agentResponseSchema,
   filterTechnicalExplanation,
@@ -37,12 +38,17 @@ export async function runAgent(opts: RunnerOptions): Promise<void> {
   );
   const systemPrompt = agent.buildSystemPrompt(ctx);
   const userMessage = agent.buildUserMessage(ctx);
-  const messages = [{ role: 'user' as const, content: userMessage }];
+  const history = ctx.history ?? [];
+  const messages = [...history, { role: 'user' as const, content: userMessage }];
   const maxRounds = agent.maxRounds ?? DEFAULT_MAX_ROUNDS;
   const stepBudget = maxRounds + STRUCTURED_OUTPUT_STEP_BUFFER;
 
   const startTime = Date.now();
-  console.log(`[Agent:${agent.name}] started, model=${modelId}`);
+  logger.info('runner.start', 'Sub-agent started', {
+    requestId: ctx.requestId,
+    agent: agent.name,
+    model: modelId,
+  });
   send({
     type: 'debug',
     scope: 'runner',
@@ -52,6 +58,7 @@ export async function runAgent(opts: RunnerOptions): Promise<void> {
       model: modelId,
       maxRounds,
       stepBudget,
+      historyLength: history.length,
     },
   });
 
@@ -90,7 +97,12 @@ export async function runAgent(opts: RunnerOptions): Promise<void> {
         if (step.toolCalls.length > 0) skillRounds++;
         for (const tc of step.toolCalls) {
           const name = 'toolName' in tc ? String(tc.toolName) : 'unknown';
-          console.log(`[Agent:${agent.name}] Skill: ${name}(${JSON.stringify(toolCallArgs(tc))})`);
+          logger.info('runner.skill', 'Skill invoked', {
+            requestId: ctx.requestId,
+            agent: agent.name,
+            skill: name,
+            args: toolCallArgs(tc),
+          });
           send({ type: 'skill', name, args: toolCallArgs(tc) });
         }
       },
@@ -101,7 +113,13 @@ export async function runAgent(opts: RunnerOptions): Promise<void> {
     const output = result.output;
     const cleanedExplanation = filterTechnicalExplanation(output.sql, output.explanation);
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`[Agent:${agent.name}] Done in ${elapsed}s, skillRounds=${skillRounds}`);
+    logger.info('runner.end', 'Sub-agent finished', {
+      requestId: ctx.requestId,
+      agent: agent.name,
+      durationMs: Date.now() - startTime,
+      skillRounds,
+      hasSql: Boolean(output.sql?.trim()),
+    });
     send({
       type: 'debug',
       scope: 'runner',
@@ -139,7 +157,12 @@ export async function runAgent(opts: RunnerOptions): Promise<void> {
         return;
       }
     }
-    console.error(`[Agent:${agent.name}]`, err);
+    logger.error('runner.error', 'Sub-agent failed', {
+      requestId: ctx.requestId,
+      agent: agent.name,
+      durationMs: Date.now() - startTime,
+      error: err instanceof Error ? err.message : String(err),
+    });
     const message = err instanceof Error ? err.message : 'Внутренняя ошибка агента';
     send({
       type: 'debug',

@@ -10,16 +10,28 @@ export interface ArtifactPayload {
   skipAutoRowLimit?: boolean;
 }
 
+/**
+ * Tone hint for the UI. Optional — undefined means default 'info'.
+ * - info:    obvious success / neutral message
+ * - warning: query ran but produced no useful result (no rows, gave up after retries)
+ * - error:   we genuinely failed to build/run a working query
+ */
+export type AssistantMessageTone = 'info' | 'warning' | 'error';
+
 export interface SavedChatAssistantText {
   kind: 'text';
   text: string;
   suggestions: string[];
+  tone?: AssistantMessageTone;
+  /** Optional debug detail surfaced behind a disclosure (raw error, attempted SQL, etc.). */
+  detail?: string;
 }
 
 export interface SavedChatAssistantArtifact {
   kind: 'artifact';
   text: string;
   suggestions: string[];
+  tone?: AssistantMessageTone;
   artifact: ArtifactPayload;
 }
 

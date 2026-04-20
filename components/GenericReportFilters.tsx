@@ -19,6 +19,8 @@ interface Props {
   lazyFilterLoading?: Record<string, boolean>;
   onFiltersChange: (v: Record<string, string[]>) => void;
   onPeriodChange: (key: string, from: string, to: string) => void;
+  /** Compact inline mode: renders filter controls without outer card/title/footer */
+  compact?: boolean;
 }
 
 export default function GenericReportFilters({
@@ -32,6 +34,7 @@ export default function GenericReportFilters({
   lazyFilterLoading,
   onFiltersChange,
   onPeriodChange,
+  compact = false,
 }: Props) {
   const primaryDefs = filterDefs.filter(fd => (fd.tier ?? 'primary') === 'primary');
   const secondaryDefs = filterDefs.filter(fd => fd.tier === 'secondary');
@@ -59,6 +62,94 @@ export default function GenericReportFilters({
     for (const col of periodFilterCols) {
       onPeriodChange(col.key, '', '');
     }
+  }
+
+  if (compact) {
+    return (
+      <div className="space-y-3">
+        {(primaryDefs.length > 0 || periodFilterCols.length > 0) && (
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {primaryDefs.map(fd => (
+              <MultiSelect
+                key={fd.key}
+                label={fd.label}
+                options={options[fd.key] ?? []}
+                value={values[fd.key] ?? []}
+                onChange={v => onFiltersChange({ ...values, [fd.key]: v })}
+                placeholder="Все"
+                loading={Boolean(filtersLoading) || Boolean(lazyFilterLoading?.[fd.key])}
+                onOpenChange={open => { if (open) onLazyFilterOpen?.(fd.key); }}
+                size="xs"
+              />
+            ))}
+            {periodFilterCols.map(col => {
+              const p = periodFilters[col.key] ?? { from: '', to: '' };
+              const isNumber = col.type === 'number';
+              return (
+                <div key={col.key} className="sm:col-span-2">
+                  <label className="mb-1 block text-xs font-medium text-on-surface">{col.label}</label>
+                  <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-1.5">
+                    {isNumber ? (
+                      <input type="number" value={p.from} onChange={e => onPeriodChange(col.key, e.target.value, p.to)}
+                        className="ui-field min-w-0 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none" />
+                    ) : (
+                      <DatePicker value={p.from} onChange={v => onPeriodChange(col.key, v, p.to)} placeholder="С даты" />
+                    )}
+                    <span className="text-center text-outline-variant text-xs">—</span>
+                    {isNumber ? (
+                      <input type="number" value={p.to} onChange={e => onPeriodChange(col.key, p.from, e.target.value)}
+                        className="ui-field min-w-0 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none" />
+                    ) : (
+                      <DatePicker value={p.to} onChange={v => onPeriodChange(col.key, p.from, v)} placeholder="По дату" />
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {secondaryDefs.length > 0 && (
+          <div>
+            <button type="button" onClick={() => setSecondaryExpanded(e => !e)}
+              className="flex items-center gap-1.5 text-xs text-on-surface-variant hover:text-on-surface">
+              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${secondaryExpanded ? 'rotate-180' : ''}`} strokeWidth={2.2} />
+              Дополнительные фильтры ({secondaryDefs.length})
+              {secondaryActiveCount > 0 && (
+                <span className="ml-1 rounded-full bg-primary-fixed/80 px-1.5 py-px text-[10px] font-medium text-primary">
+                  {secondaryActiveCount}
+                </span>
+              )}
+            </button>
+            {secondaryExpanded && (
+              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {secondaryDefs.map(fd => (
+                  <MultiSelect
+                    key={fd.key}
+                    label={fd.label}
+                    options={options[fd.key] ?? []}
+                    value={values[fd.key] ?? []}
+                    onChange={v => onFiltersChange({ ...values, [fd.key]: v })}
+                    placeholder="Все"
+                    loading={Boolean(filtersLoading) || Boolean(lazyFilterLoading?.[fd.key])}
+                    onOpenChange={open => { if (open) onLazyFilterOpen?.(fd.key); }}
+                    size="xs"
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {activeCount > 0 && (
+          <button type="button" onClick={handleReset}
+            className="text-xs text-on-surface-variant hover:text-on-surface underline underline-offset-2">
+            Сбросить фильтры
+          </button>
+        )}
+        {filterDefs.length === 0 && periodFilterCols.length === 0 && (
+          <p className="text-xs text-on-surface-variant">Нет доступных фильтров для этого источника.</p>
+        )}
+      </div>
+    );
   }
 
   return (
