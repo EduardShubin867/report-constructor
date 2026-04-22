@@ -8,7 +8,7 @@ import {
   safeDetailSortColumn,
   safeGroupedSortColumn,
 } from '@/lib/query-builder';
-import { effectiveColumnFilterTier } from '@/lib/report-filter-tier';
+import { buildFilterDescriptors, effectiveColumnFilterTier } from '@/lib/report-filter-tier';
 import { getDataSources } from '@/lib/schema';
 import { getGroupByColumnDefs, getSourceJoinDefs, getVisibleColumnDefs } from '@/lib/visible-columns';
 import { createMockSqlRequest } from '../helpers/mock-sql-request';
@@ -32,6 +32,47 @@ function getFixtureSource() {
 }
 
 describe('query-builder helpers', () => {
+  it('caps lazy filter option SQL before loading distinct values into memory', () => {
+    const descriptors = buildFilterDescriptors({
+      id: 'source',
+      name: 'Source',
+      dialect: 'mssql',
+      schema: 'dbo',
+      tables: [
+        {
+          name: 'Main',
+          alias: 'm',
+          columns: [
+            { name: 'HighCardinalityColumn', type: 'string', filterTier: 'primary' },
+          ],
+          foreignKeys: [
+            {
+              alias: 'fk_city',
+              column: 'CityId',
+              targetTable: 'Cities',
+              targetColumn: 'ID',
+              filterConfig: {
+                displayField: 'Name',
+                label: 'City',
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(descriptors).toEqual([
+      expect.objectContaining({
+        key: 'HighCardinalityColumn',
+        sql: expect.stringMatching(/^SELECT DISTINCT TOP \(\d+\) \[HighCardinalityColumn\] AS v /),
+      }),
+      expect.objectContaining({
+        key: 'fk_city',
+        sql: expect.stringMatching(/^SELECT DISTINCT TOP \(\d+\) \[Name\] AS v /),
+      }),
+    ]);
+  });
+
   it('keeps only source-visible columns and sorts selected detail columns safely', () => {
     const { source } = getFixtureSource();
     const visible = getVisibleColumnDefs(source.id);

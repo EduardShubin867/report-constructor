@@ -23,6 +23,8 @@ export interface BuiltFilterDescriptor {
   sql: string;
 }
 
+export const FILTER_OPTION_VALUE_LIMIT = 5000;
+
 /** Все фильтры источника с SQL для DISTINCT; значения подгружаются по запросу. */
 export function buildFilterDescriptors(source: DataSource): BuiltFilterDescriptor[] {
   const table = source.tables.find(t => t.columns.length > 0);
@@ -35,7 +37,7 @@ export function buildFilterDescriptors(source: DataSource): BuiltFilterDescripto
     const tier = effectiveColumnFilterTier(col);
     if (!tier) continue;
     const label = col.label ?? col.name;
-    const sql = `SELECT DISTINCT [${col.name}] AS v FROM ${tableName} WHERE [${col.name}] IS NOT NULL ORDER BY [${col.name}]`;
+    const sql = `SELECT DISTINCT TOP (${FILTER_OPTION_VALUE_LIMIT}) [${col.name}] AS v FROM ${tableName} WHERE [${col.name}] IS NOT NULL ORDER BY [${col.name}]`;
     out.push({ key: col.name, label, type: 'direct', tier, sql });
   }
 
@@ -45,7 +47,7 @@ export function buildFilterDescriptors(source: DataSource): BuiltFilterDescripto
     const { displayField, label, targetWhere } = fk.filterConfig;
     const targetTableRef = `[${schema}].[${fk.targetTable}]`;
     const whereClause = targetWhere ? ` WHERE ${targetWhere}` : '';
-    const sql = `SELECT DISTINCT [${displayField}] AS v FROM ${targetTableRef}${whereClause} ORDER BY [${displayField}]`;
+    const sql = `SELECT DISTINCT TOP (${FILTER_OPTION_VALUE_LIMIT}) [${displayField}] AS v FROM ${targetTableRef}${whereClause} ORDER BY [${displayField}]`;
     out.push({ key: fk.alias, label, type: 'fk', tier, sql });
   }
 

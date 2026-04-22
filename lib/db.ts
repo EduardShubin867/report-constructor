@@ -42,7 +42,29 @@ function buildDefaultConfig(): sql.config {
 // named connections. This lets multiple DataSources on the same server but
 // different databases each get their own pool while sharing credentials.
 
-const pools = new Map<string, sql.ConnectionPool>();
+interface PoolRegistry {
+  pools: Map<string, sql.ConnectionPool>;
+  pending: Map<string, Promise<sql.ConnectionPool>>;
+}
+
+const SQL_POOL_REGISTRY_KEY = Symbol.for('constructor.sqlPoolRegistry.v1');
+
+function getPoolRegistry(): PoolRegistry {
+  const globalForSqlPools = globalThis as unknown as {
+    [key: symbol]: PoolRegistry | undefined;
+  };
+  const existing = globalForSqlPools[SQL_POOL_REGISTRY_KEY];
+  if (existing) return existing;
+
+  const next: PoolRegistry = {
+    pools: new Map<string, sql.ConnectionPool>(),
+    pending: new Map<string, Promise<sql.ConnectionPool>>(),
+  };
+  globalForSqlPools[SQL_POOL_REGISTRY_KEY] = next;
+  return next;
+}
+
+const { pools, pending } = getPoolRegistry();
 
 async function createPool(key: string, config: sql.config): Promise<sql.ConnectionPool> {
   console.log(`Connecting pool [${key}] to`, { server: config.server, database: config.database, user: config.user, port: config.port });
@@ -60,9 +82,32 @@ async function createPool(key: string, config: sql.config): Promise<sql.Connecti
     }
   });
   const connected = await p.connect();
-  pools.set(key, connected);
   console.log(`Pool [${key}] connected.`);
   return connected;
+}
+
+async function getOrCreatePool(key: string, config: sql.config): Promise<sql.ConnectionPool> {
+  const existing = pools.get(key);
+  if (existing?.connected) return existing;
+  if (existing) pools.delete(key);
+
+  const connecting = pending.get(key);
+  if (connecting) return connecting;
+
+  const createPromise = createPool(key, config)
+    .then(connected => {
+      if (pending.get(key) === createPromise) {
+        pools.set(key, connected);
+      }
+      return connected;
+    })
+    .finally(() => {
+      if (pending.get(key) === createPromise) {
+        pending.delete(key);
+      }
+    });
+  pending.set(key, createPromise);
+  return createPromise;
 }
 
 /**
@@ -80,17 +125,11 @@ export async function getPoolForConnection(
   database?: string,
 ): Promise<sql.ConnectionPool> {
   if (!conn || !connectionId || !database) {
-    const existing = pools.get('default');
-    if (existing?.connected) return existing;
-    if (existing) pools.delete('default');
-    return createPool('default', buildDefaultConfig());
+    return getOrCreatePool('default', buildDefaultConfig());
   }
 
   const key = `${connectionId}:${database}`;
-  const existing = pools.get(key);
-  if (existing?.connected) return existing;
-  if (existing) pools.delete(key);
-  return createPool(key, buildConfig(conn, database));
+  return getOrCreatePool(key, buildConfig(conn, database));
 }
 
 /**
@@ -118,6 +157,23 @@ export async function getPoolForSource(
  */
 export async function closePoolsForConnection(connectionId: string): Promise<void> {
   const prefix = `${connectionId}:`;
+  const closingPending: Promise<void>[] = [];
+
+  for (const [key, poolPromise] of pending.entries()) {
+    if (key.startsWith(prefix)) {
+      pending.delete(key);
+      closingPending.push(
+        poolPromise
+          .then(async pool => {
+            if (pools.get(key) === pool) pools.delete(key);
+            await pool.close().catch(() => {});
+            console.log(`Pool [${key}] closed.`);
+          })
+          .catch(() => {}),
+      );
+    }
+  }
+
   for (const [key, pool] of pools.entries()) {
     if (key.startsWith(prefix)) {
       await pool.close().catch(() => {});
@@ -125,6 +181,8 @@ export async function closePoolsForConnection(connectionId: string): Promise<voi
       console.log(`Pool [${key}] closed.`);
     }
   }
+
+  await Promise.all(closingPending);
 }
 
 /** Default pool — backward compat for existing call sites */
