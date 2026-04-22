@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { revalidateReportsCaches } from '@/lib/report-filters-data';
 import { invalidateSchemaCache } from '@/lib/schema';
 import { deleteSourceLink } from '@/lib/schema/store';
 
@@ -15,6 +16,7 @@ export async function DELETE(
 
   deleteSourceLink(id);
   invalidateSchemaCache();
+  revalidateReportsCaches();
 
   return Response.json({ ok: true });
 }

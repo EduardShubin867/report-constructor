@@ -58,6 +58,16 @@ export function LinkedReportWorkspace({
   const [previewLoading, setPreviewLoading] = useState(false);
 
   useEffect(() => {
+    if (links.length === 0) {
+      if (selectedLinkId) setSelectedLinkId('');
+      return;
+    }
+    if (!links.some(link => link.id === selectedLinkId)) {
+      setSelectedLinkId(links[0].id);
+    }
+  }, [links, selectedLinkId]);
+
+  useEffect(() => {
     if (!activeLink) return;
     setLeftColumns(buildDefaultColumns(leftBootstrap, activeLink.leftJoinField));
     setRightColumns(buildDefaultColumns(rightBootstrap, activeLink.rightJoinField));

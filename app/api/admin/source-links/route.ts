@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getJoinableColumnDefs } from '@/lib/linked-report';
+import { revalidateReportsCaches } from '@/lib/report-filters-data';
 import { getDataSources, invalidateSchemaCache, type SourceLink } from '@/lib/schema';
 import { loadSourceLinks, saveSourceLink } from '@/lib/schema/store';
 
@@ -61,6 +62,7 @@ export async function POST(request: NextRequest) {
 
   saveSourceLink(body.link);
   invalidateSchemaCache();
+  revalidateReportsCaches();
 
   return Response.json({ ok: true, id: body.link.id });
 }

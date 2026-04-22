@@ -4,6 +4,7 @@
  */
 
 import { NextRequest } from 'next/server';
+import { closePoolsForConnection } from '@/lib/db';
 import { loadConnections, saveConnection } from '@/lib/schema/store';
 import type { StoredConnection } from '@/lib/schema/types';
 
@@ -44,5 +45,6 @@ export async function POST(request: NextRequest) {
   }
 
   saveConnection(connection);
+  await closePoolsForConnection(connection.id);
   return Response.json({ ok: true, id: connection.id });
 }

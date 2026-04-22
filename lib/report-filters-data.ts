@@ -112,11 +112,18 @@ export async function loadSingleFilterKeyValues(sourceId: string, key: string): 
 
 /**
  * Вызывать после изменения источника в админке (колонки, фильтры, FK и т.д.),
- * чтобы сбросить lazy-cache по DISTINCT-значениям и пересобрать страницу ручного отчёта.
+ * чтобы сбросить lazy-cache по DISTINCT-значениям и пересобрать отчёты.
  */
-export function revalidateManualReportCaches(): void {
+export function revalidateReportsCaches(): void {
+  const reportsPath = `${BASE_PATH}/reports`;
   revalidateTag(REPORT_FILTER_OPTIONS_CACHE_TAG, { expire: 0 });
-  revalidatePath(`${BASE_PATH}/reports/manual`);
+  revalidatePath(reportsPath, 'layout');
+  revalidatePath(`${reportsPath}/manual`);
+  revalidatePath(`${reportsPath}/linked`);
+}
+
+export function revalidateManualReportCaches(): void {
+  revalidateReportsCaches();
 }
 
 /** Server-prefetched bundle for one manual-report source (columns + filter dropdown data). */

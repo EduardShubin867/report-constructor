@@ -255,6 +255,12 @@ export default function ManualReportRoute({
 
   // ── Source change effects ──────────────────────────────────────────────────
   useEffect(() => {
+    if (selectedSourceId && sources.some(source => source.id === selectedSourceId)) return;
+    if (!selectedSourceId && !defaultSourceId) return;
+    setSelectedSourceId(defaultSourceId);
+  }, [defaultSourceId, selectedSourceId, sources]);
+
+  useEffect(() => {
     if (lastInitialSourceIdRef.current === normalizedInitialSourceId) return;
     lastInitialSourceIdRef.current = normalizedInitialSourceId;
     setSelectedSourceId(normalizedInitialSourceId);
