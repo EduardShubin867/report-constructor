@@ -1,36 +1,83 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Constructor
 
-## Getting Started
+**Constructor** — веб-приложение **для построения отчётов поверх произвольных корпоративных данных**: чат с AI, ручной конструктор, экспорт, админка подключений и схем. Фронтенд и BFF на **Next.js 16** (App Router, **React 19**, **Tailwind CSS v4**), к данным — **Microsoft SQL Server** через серверные API-роуты; источники и таблицы описываются в конфигурации, так что сценарий не привязан к одной предметной области. Подробности по коду — в [`CLAUDE.md`](./CLAUDE.md).
 
-First, run the development server:
+## Локальный запуск
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Открой в браузере **http://localhost:3000/constructor** — в [`next.config.ts`](./next.config.ts) задан [`basePath`](https://nextjs.org/docs/app/api-reference/config/next-config-js/basePath) `/constructor`, поэтому приложение обслуживается под этим префиксом, а не в корне сайта.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Сборка и прод-режим:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run build
+npm start
+```
 
-## Learn More
+## Переменные окружения
 
-To learn more about Next.js, take a look at the following resources:
+Минимально для работы с БД и LLM (имена ориентировочные — сверяй с тем, что читает `lib/db.ts` и `lib/llm/`):
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- **SQL Server:** `DB_SERVER`, `DB_DATABASE`, `DB_USER`, `DB_PASSWORD`, при необходимости `DB_PORT`, `DB_ENCRYPT`, `DB_TRUST_CERT`
+- **OpenRouter (AI):** `OPENROUTER_API_KEY`, опционально `OPENROUTER_MODEL`
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Админка и прочее — см. [`docker-compose.yml`](./docker-compose.yml) (там же пример `ADMIN_PASSWORD`, `AGENT_ANALYTICS_ENABLED`).
 
-## Deploy on Vercel
+## Основные разделы UI
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| Путь | Назначение |
+|------|------------|
+| `/constructor` | редирект → `/constructor/reports` |
+| `/constructor/reports` | редирект → чат с отчётами |
+| `/constructor/reports/chat` | чат: **AI-аналитик** (SQL) и режим **ОСАГО-агент** |
+| `/constructor/reports/manual` | ручной конструктор отчёта (фильтры, колонки, Excel) |
+| `/constructor/reports/linked` | связанные отчёты |
+| `/constructor/admin` | админка (логин, подключения, схемы, скиллы, source links) |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## OSAGO ML-агент (внешний бэкенд)
+
+Чат в режиме «ОСАГО-агент» ходит на отдельный ML-сервис через приложение: API-роут **`/api/osago-agent`** (прокси и SSE; графики — **`/api/osago-agent/charts/[filename]`**).
+
+Переменные на стороне Next.js (server-only):
+
+```bash
+OSAGO_AGENT_BASE_URL=http://localhost:8000
+OSAGO_AGENT_DOCKER_BASE_URL=http://host.docker.internal:8000
+OSAGO_AGENT_USERNAME=admin
+OSAGO_AGENT_PASSWORD=change-me
+OSAGO_AGENT_TIMEOUT_MS=1200000
+OSAGO_AGENT_SSE_HEARTBEAT_MS=15000
+```
+
+- **`OSAGO_AGENT_BASE_URL`** — для локального `next dev` / `next start`.
+- В **Docker** в контейнер обычно пробрасывают `OSAGO_AGENT_BASE_URL` из `OSAGO_AGENT_DOCKER_BASE_URL` (см. `docker-compose.yml`).
+
+`OSAGO_AGENT_SSE_HEARTBEAT_MS` задаёт интервал keepalive при длинных ответах агента.
+
+## Docker
+
+```bash
+docker compose up --build
+```
+
+По умолчанию приложение публикуется на **порту 3400** (маппинг `3400:3000`), внутри контейнера задано `NEXT_PUBLIC_SITE_URL` с префиксом `/constructor`. Каталог **`./data`** монтируется в контейнер (права на запись для пользователя приложения, см. комментарий в compose-файле).
+
+## Скрипты npm
+
+| Команда | Описание |
+|---------|----------|
+| `npm run dev` | dev-сервер |
+| `npm run build` / `npm start` | production |
+| `npm run lint` | ESLint |
+| `npm test` / `npm run test:unit` | Jest (unit + API route tests) |
+| `npm run test:e2e` | сборка + Playwright |
+| `npm run test:ci` | lint + unit + build + e2e |
+
+## Документация Next.js
+
+- [Документация Next.js](https://nextjs.org/docs)
+- [Создание Next.js-приложения](https://nextjs.org/docs/app/api-reference/cli/create-next-app)

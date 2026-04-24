@@ -10,13 +10,14 @@ import { getDataSources } from '@/lib/schema';
 import { resolveRouterModel } from './registry';
 import { createAppOpenRouter } from '@/lib/llm/openrouter-factory';
 import { AGENT_DEBUG_ENABLED } from '@/lib/constants';
+import { isLikelyContextFollowUpQuery } from '@/lib/analysis-context';
 import { logger } from '@/lib/logger';
 
 export interface SourceRoutingResult {
   sourceId: string;
   sourceName: string;
   /** How the decision was made — for debug/telemetry */
-  reason: 'single' | 'llm' | 'fallback';
+  reason: 'single' | 'context' | 'llm' | 'fallback';
 }
 
 /**
@@ -47,6 +48,18 @@ export async function pickDataSource(
       data: { sourceId: only.id },
     });
     return { sourceId: only.id, sourceName: only.name, reason: 'single' };
+  }
+
+  const contextSourceId = ctx.analysisContext?.source?.id;
+  const contextSource = contextSourceId ? sources.find(source => source.id === contextSourceId) : undefined;
+  if (contextSource && isLikelyContextFollowUpQuery(ctx.query)) {
+    send({
+      type: 'debug',
+      scope: 'orchestrator',
+      message: 'Сохраняю источник из контекста предыдущего анализа',
+      data: { sourceId: contextSource.id },
+    });
+    return { sourceId: contextSource.id, sourceName: contextSource.name, reason: 'context' };
   }
 
   const catalog = sources

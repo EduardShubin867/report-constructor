@@ -1,4 +1,5 @@
 import type { ColumnSchema, DataSource } from '@/lib/schema/types';
+import { BASE_PATH } from '@/lib/constants';
 import type { ColumnFilterTier, SourceEditorFormData } from './types';
 
 export const EMPTY_SOURCE_EDITOR_FORM: SourceEditorFormData = {
@@ -42,6 +43,25 @@ export function normalizeSourceForSave(source: DataSource, form: SourceEditorFor
         return nextColumn;
       }),
     })),
+  };
+}
+
+export function buildGenerateWhenToUseRequest(
+  form: Pick<SourceEditorFormData, 'name' | 'whenToUse' | 'tables'>,
+): {
+  url: string;
+  body: { name: string; draft: string; tables: string[] };
+} {
+  return {
+    url: `${BASE_PATH}/api/admin/sources/generate-when-to-use`,
+    body: {
+      name: form.name,
+      draft: form.whenToUse,
+      tables: form.tables
+        .split('\n')
+        .map(table => table.trim())
+        .filter(Boolean),
+    },
   };
 }
 

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import AgentChatWorkspace from '@/components/AgentChatWorkspace';
+import AgentChatWorkspace from '@/components/agent-chat-workspace';
 import ReportsChrome from '@/components/ReportsChrome';
 
 const fadeSlide = {

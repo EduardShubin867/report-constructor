@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { FileSpreadsheet, Rows3, Sparkles, X } from 'lucide-react';
 import SqlHighlight from '@/components/SqlHighlight';
-import UnifiedReportTable from '@/components/UnifiedReportTable';
+import MarkdownText from '@/components/agent-chat/MarkdownText';
+import UnifiedReportTable from '@/components/unified-report-table';
 import { resolveAiColumnHeader } from '@/lib/column-header';
 import type { SavedChatTurn } from '@/lib/report-history-types';
 
@@ -103,9 +104,9 @@ export default function AgentArtifactModal({
                   <h2 className="font-headline text-2xl font-semibold text-on-surface">
                     {turn.userQuery}
                   </h2>
-                  <p className="mt-2 max-w-4xl text-sm leading-6 text-on-surface-variant">
-                    {turn.assistant.text}
-                  </p>
+                  <div className="mt-2 max-w-4xl text-sm text-on-surface-variant">
+                    <MarkdownText text={turn.assistant.text} renderImages={false} />
+                  </div>
 
                   <div className="mt-4 grid gap-3 sm:grid-cols-3">
                     <div className="rounded-2xl border border-white/65 bg-white/70 px-4 py-3 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">

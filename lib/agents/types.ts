@@ -3,10 +3,13 @@
  * ──────────────────────────────────────────────────────────────────── */
 
 import type { ModelMessage } from 'ai';
+import type { AnalysisContext } from '@/lib/report-history-types';
 
 export interface AgentContext {
   /** Unique id for this agent run — used for log/trace correlation across layers. */
   requestId: string;
+  /** Stable UI conversation id for cross-turn context, if the client has one. */
+  chatSessionId?: string;
   /** Today's date ISO (YYYY-MM-DD) */
   today: string;
   /** User's natural-language query (latest turn) */
@@ -23,6 +26,11 @@ export interface AgentContext {
    * model can see what was already discussed in this chat.
    */
   history?: ModelMessage[];
+  /**
+   * Compact structured state from previous turns: selected source, filters,
+   * last SQL, result columns, metrics and dimensions. Used for short follow-ups.
+   */
+  analysisContext?: AnalysisContext;
   /**
    * Data source chosen by the source-router before the sub-agent runs.
    * If omitted, agents fall back to using all registered sources.
@@ -86,24 +94,19 @@ export interface SubAgentConfig {
   /** Max tool-calling rounds (hint for stopWhen budget). Default: 5 */
   maxRounds?: number;
 
-  /** Build the system prompt given the current context */
+  /**
+   * Optional: bypass the LLM runner entirely and handle the request directly.
+   * If defined, the runner will call this instead of the LLM tool-calling loop.
+   * Use for agents that delegate to external services (e.g. OSAGO ML backend).
+   */
+  run?: (ctx: AgentContext, send: AgentEventSink) => Promise<void>;
+
+  /** Build the system prompt given the current context (unused when run() is defined) */
   buildSystemPrompt(ctx: AgentContext): string;
 
-  /** Build the initial user message from context */
+  /** Build the initial user message from context (unused when run() is defined) */
   buildUserMessage(ctx: AgentContext): string;
 
-  /**
-   * Optional: fast routing without LLM.
-   *
-   * Return a confidence score 0–1:
-   * - 1.0 = "this is definitely mine" (e.g. keyword match)
-   * - 0.5–0.9 = "likely mine"
-   * - 0 = "not mine"
-   *
-   * If exactly one agent returns ≥ threshold → route directly (no LLM).
-   * If multiple agents match or none match → fallback to LLM routing.
-   */
-  match?: (ctx: AgentContext) => number;
 }
 
 /* ────────────────────────────────────────────────────────────────────

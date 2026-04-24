@@ -8,6 +8,7 @@
 
 import type { SubAgentConfig, AgentContext } from './types';
 import {
+  getAnalysisContextSection,
   getCriticalDatabaseRulesSection,
   getTerritoryScopedUserMessageNote,
 } from './shared-db-rules';
@@ -24,6 +25,8 @@ function buildSystemPrompt(ctx: AgentContext): string {
 СУБД: Microsoft SQL Server
 
 ${schema}
+
+${getAnalysisContextSection(ctx.analysisContext)}
 
 ## Твоя специализация
 
@@ -195,12 +198,6 @@ const claimsAnalyst: SubAgentConfig = {
   name: 'claims-analyst',
   description: 'Анализ убытков и урегулирования ОСАГО: коэффициент убыточности, частота страховых случаев, средние выплаты, сравнение урегулированных и неурегулированных убытков по ДГ, территориям, агентам.',
   maxRounds: 5,
-  match(ctx) {
-    const q = ctx.query.toLowerCase();
-    if (/(убыток|убытк|убыточн|выплат|урегулир|страховой случай|loss ratio|частота страх)/.test(q)) return 0.9;
-    if (/(claim|потер|ущерб.{0,10}тс|выплачен)/.test(q)) return 0.7;
-    return 0;
-  },
   buildSystemPrompt,
   buildUserMessage,
 };

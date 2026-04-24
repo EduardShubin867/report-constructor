@@ -273,30 +273,20 @@ export default mySkill;
 
 ### Маршрутизация (как оркестратор выбирает агента)
 
-Трёхуровневая, от быстрого к медленному:
+Двухуровневая:
 
-1. **1 агент** → вызывается напрямую, без overhead
-2. **`match(ctx)` scoring** → каждый агент может определить функцию `match`, которая возвращает confidence score 0–1. Если ровно один агент набрал ≥ 0.5 — он и выбирается (без LLM). При равных top-scores → неоднозначность → fallback на LLM.
-3. **LLM routing** → fallback. Оркестратор отправляет каталог агентов (name + description) и запрос пользователя — LLM возвращает имя агента.
-
-```ts
-// Пример match-функции — по ключевым словам
-match(ctx) {
-  const q = ctx.query.toLowerCase();
-  if (/sql|запрос|отчёт|таблиц|выбор|агрегац/.test(q)) return 0.9;
-  if (/данн|стат/.test(q)) return 0.6;
-  return 0;
-},
-```
+1. **LLM routing** → оркестратор отправляет каталог агентов (name + description) и запрос пользователя; router-модель возвращает structured output с выбранным агентом, confidence и короткой причиной.
+2. **Fallback** → если router-модель упала или вернула неизвестное имя агента, оркестратор запускает первый агент из registry.
 
 ### Резолвинг модели
 
 Две отдельные цепочки:
 
-- **Роутер (оркестратор):** `opts.routerModel` → `OPENROUTER_ROUTER_MODEL` → `OPENROUTER_MODEL` → hardcoded fallback
+- **Роутер (оркестратор, primary):** `opts.routerModel` → `OPENROUTER_ROUTER_MODEL` → `OPENROUTER_MODEL` → hardcoded fallback
+- **Роутер (retry fallback):** `OPENROUTER_ROUTER_FALLBACK_MODEL` → hardcoded router fallback
 - **Суб-агент:** `agent.model` → `OPENROUTER_AGENT_MODEL` → `OPENROUTER_MODEL` → hardcoded fallback
 
-`OPENROUTER_MODEL` — общий fallback, если хочется одну модель на всё. Специфичные `_ROUTER_MODEL` / `_AGENT_MODEL` перебивают его.
+`OPENROUTER_MODEL` — общий fallback, если хочется одну модель на всё. Специфичные `_ROUTER_MODEL` / `_AGENT_MODEL` перебивают его. `OPENROUTER_ROUTER_FALLBACK_MODEL` нужен именно как запасной structured-output-safe маршрут для оркестратора.
 
 ### Как добавить нового суб-агента
 
@@ -311,11 +301,6 @@ const myAgent: SubAgentConfig = {
   description: 'Описание для маршрутизации (LLM-fallback читает это)',
   model: 'anthropic/claude-sonnet-4',  // опционально, иначе из env/default
   maxRounds: 3,                         // опционально, default 5
-
-  // Быстрый роутинг без LLM (опционально)
-  match(ctx) {
-    return /keyword/.test(ctx.query.toLowerCase()) ? 0.9 : 0;
-  },
 
   buildSystemPrompt(ctx) { return '...'; },
   buildUserMessage(ctx) { return ctx.query; },
@@ -333,10 +318,10 @@ export default myAgent;
 
 ### Компоненты системы
 
-- **`types.ts`** — `SubAgentConfig`, `AgentContext`, `AgentEvent`, `match()`
+- **`types.ts`** — `SubAgentConfig`, `AgentContext`, `AgentEvent`
 - **`runner.ts`** — generic tool-calling loop (до N раундов, финальный nudge)
 - **`registry.ts`** — реестр суб-агентов, `resolveModel()`
-- **`orchestrator.ts`** — 3-уровневая маршрутизация (single → match → LLM)
+- **`orchestrator.ts`** — LLM-only маршрутизация с fallback на первый агент
 - **`sql-analyst.ts`** — дефолтный суб-агент (извлечён из route.ts)
 
 ## AI-агент (детали sql-analyst)

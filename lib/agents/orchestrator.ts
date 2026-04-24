@@ -2,32 +2,28 @@
  * Orchestrator — routes user queries to the appropriate sub-agent.
  *
  * Routing priority:
- * 1. match() scoring → if exactly one agent scores ≥ MATCH_THRESHOLD, use it
- * 2. LLM routing → ask LLM to pick from agent catalog (fallback)
+ * 1. LLM routing → ask the router model to select a sub-agent from the catalog
+ * 2. Fallback → if the router fails or returns an unknown agent, use the first agent
  */
 
-import { generateText } from 'ai';
-import type { AgentContext, AgentEventSink, SubAgentConfig } from './types';
-import { getAllAgents, getAgent, resolveRouterModel, getAgentCatalog } from './registry';
+import { generateText, Output } from 'ai';
+import { z } from 'zod';
+import type { AgentContext, AgentEventSink } from './types';
+import { getAllAgents, getAgent, resolveRouterModelCandidates, getAgentCatalog } from './registry';
 import { runAgent } from './runner';
 import { AGENT_DEBUG_ENABLED } from '@/lib/constants';
 import { createAppOpenRouter } from '@/lib/llm/openrouter-factory';
 import { pickDataSource } from './source-router';
 import { logger } from '@/lib/logger';
+import { buildAnalysisContextSummary, isLikelyContextFollowUpQuery } from '@/lib/analysis-context';
 
-/** Minimum match() score to route without LLM */
-const MATCH_THRESHOLD = 0.5;
+const routerDecisionSchema = z.object({
+  agent: z.string().trim().min(1),
+  confidence: z.number().min(0).max(1).optional(),
+  reason: z.string().trim().min(1).optional(),
+});
 
-interface MatchRoutingCandidate {
-  agent: SubAgentConfig;
-  score: number;
-}
-
-interface MatchRoutingResult {
-  selected: SubAgentConfig | null;
-  candidates: MatchRoutingCandidate[];
-  reason: 'matched' | 'ambiguous' | 'no_match';
-}
+type RouterDecision = z.infer<typeof routerDecisionSchema>;
 
 export interface OrchestratorOptions {
   ctx: AgentContext;
@@ -68,57 +64,13 @@ export async function orchestrate(opts: OrchestratorOptions): Promise<void> {
     return;
   }
 
-  /* ── 1. Try match() scoring ─────────────────────────────────────── */
-  const matched = tryMatchRouting(agents, ctx);
-  send({
-    type: 'debug',
-    scope: 'orchestrator',
-    message: 'Проверяю fast-match маршрутизацию',
-    data: {
-      threshold: MATCH_THRESHOLD,
-      candidates: matched.candidates.map(({ agent, score }) => ({
-        name: agent.name,
-        score: Number(score.toFixed(3)),
-      })),
-    },
-  });
-
-  if (matched.selected) {
-    logger.info('orchestrator.match', 'Matched by score', {
-      requestId: ctx.requestId,
-      agent: matched.selected.name,
-      score: matched.candidates[0]?.score,
-    });
-    send({
-      type: 'debug',
-      scope: 'orchestrator',
-      message: 'Маршрут выбран без LLM',
-      data: {
-        reason: matched.reason,
-        agent: matched.selected.name,
-      },
-    });
-    send({ type: 'sub_agent', name: matched.selected.name });
-    await runAgent({ agent: matched.selected, ctx, send });
-    return;
-  }
-
-  send({
-    type: 'debug',
-    scope: 'orchestrator',
-    message: matched.reason === 'ambiguous'
-      ? 'Fast-match дал неоднозначный результат, переключаюсь на LLM routing'
-      : 'Fast-match не нашёл уверенного кандидата, переключаюсь на LLM routing',
-    level: matched.reason === 'ambiguous' ? 'warn' : 'info',
-  });
-
-  /* ── 2. LLM routing (fallback) ──────────────────────────────────── */
-  const chosenName = await routeQueryLLM(ctx, send, opts.routerModel);
-  const agent = getAgent(chosenName);
+  /* ── 1. LLM routing ─────────────────────────────────────────────── */
+  const decision = await routeQueryLLM(ctx, send, opts.routerModel);
+  const agent = getAgent(decision.agent);
   if (!agent) {
     logger.warn('orchestrator.llm_routing', 'LLM returned unknown agent, falling back', {
       requestId: ctx.requestId,
-      returned: chosenName,
+      returned: decision.agent,
       fallback: agents[0].name,
     });
     send({
@@ -127,8 +79,10 @@ export async function orchestrate(opts: OrchestratorOptions): Promise<void> {
       message: 'LLM вернул неизвестного агента, беру fallback',
       level: 'warn',
       data: {
-        returned: chosenName,
+        returned: decision.agent,
         fallback: agents[0].name,
+        ...(decision.confidence !== undefined ? { confidence: decision.confidence } : {}),
+        ...(decision.reason ? { reason: decision.reason } : {}),
       },
     });
     send({ type: 'sub_agent', name: agents[0].name });
@@ -141,84 +95,56 @@ export async function orchestrate(opts: OrchestratorOptions): Promise<void> {
 }
 
 /* ────────────────────────────────────────────────────────────────────
- * Level 2: match() scoring
- * ──────────────────────────────────────────────────────────────────── */
-
-function tryMatchRouting(
-  agents: SubAgentConfig[],
-  ctx: AgentContext,
-): MatchRoutingResult {
-  const scored: MatchRoutingCandidate[] = [];
-
-  for (const agent of agents) {
-    if (!agent.match) continue;
-    try {
-      const score = agent.match(ctx);
-      if (score >= MATCH_THRESHOLD) {
-        scored.push({ agent, score });
-      }
-    } catch (err) {
-      logger.warn('orchestrator.match', 'match() threw', {
-        requestId: ctx.requestId,
-        agent: agent.name,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-
-  if (scored.length === 0) {
-    return { selected: null, candidates: [], reason: 'no_match' };
-  }
-
-  // Sort by score descending
-  scored.sort((a, b) => b.score - a.score);
-
-  // If top two have the same score → ambiguous → let LLM decide
-  if (scored.length >= 2 && scored[0].score === scored[1].score) {
-    logger.info('orchestrator.match', 'Ambiguous match — falling back to LLM', {
-      requestId: ctx.requestId,
-      candidates: scored.slice(0, 2).map(c => c.agent.name),
-      score: scored[0].score,
-    });
-    return { selected: null, candidates: scored, reason: 'ambiguous' };
-  }
-
-  return { selected: scored[0].agent, candidates: scored, reason: 'matched' };
-}
-
-/* ────────────────────────────────────────────────────────────────────
- * Level 3: LLM-based routing
+ * LLM-based routing
  * ──────────────────────────────────────────────────────────────────── */
 
 async function routeQueryLLM(
   ctx: AgentContext,
   send: AgentEventSink,
   routerModel?: string,
-): Promise<string> {
+): Promise<RouterDecision> {
   const catalog = getAgentCatalog();
+  const history = ctx.history ?? [];
   const agentList = catalog
     .map(a => `- **${a.name}**: ${a.description}`)
     .join('\n');
+  const analysisContextSummary = buildAnalysisContextSummary(ctx.analysisContext);
+  const followUpNote = isLikelyContextFollowUpQuery(ctx.query)
+    ? `
+
+Правило follow-up:
+- Если текущий запрос выглядит как короткое продолжение предыдущего анализа, сохраняй тему, метрики и выбранного специалиста, если пользователь явно не переключил задачу.
+- Формулировки вроде "а по москве?", "а за 2024?", "по ним", "разбери глубже" считай продолжением текущей аналитической ветки.`
+    : '';
 
   const system = `Ты — маршрутизатор запросов. Твоя задача — определить, какой суб-агент лучше всего подходит для обработки запроса пользователя.
 
 Доступные суб-агенты:
 ${agentList}
 
-Ответь ТОЛЬКО именем суб-агента (одно слово/slug). Ничего больше.`;
-  const messages = [{ role: 'user' as const, content: ctx.query }];
+${analysisContextSummary ? `${analysisContextSummary}\n` : ''}${followUpNote}
+
+Выбери ровно одного суб-агента и верни structured output.
+- agent: slug выбранного суб-агента из списка выше
+- confidence: уверенность от 0 до 1
+- reason: короткая причина выбора на русском
+
+Не придумывай новых имён агентов и не оставляй поля пустыми.`;
+  const messages = [...history, { role: 'user' as const, content: ctx.query }];
 
   const openrouter = createAppOpenRouter();
-  const modelId = resolveRouterModel(routerModel);
-  const model = openrouter(modelId);
+  const modelIds = resolveRouterModelCandidates(routerModel);
 
   send({
     type: 'debug',
     scope: 'orchestrator',
     message: 'Запускаю LLM routing',
     data: {
-      model: modelId,
+      model: modelIds[0],
+      fallbackModels: modelIds.slice(1),
       agents: catalog.map(agent => agent.name),
+      historyLength: history.length,
+      hasAnalysisContext: Boolean(analysisContextSummary),
     },
   });
 
@@ -229,7 +155,8 @@ ${agentList}
       message: 'LLM request payload маршрутизатора',
       data: {
         request: {
-          model: modelId,
+          model: modelIds[0],
+          fallbackModels: modelIds.slice(1),
           temperature: 0,
           systemPrompt: system,
           messages,
@@ -238,43 +165,93 @@ ${agentList}
     });
   }
 
-  try {
-    const { text } = await generateText({
-      model,
-      system,
-      messages,
-      temperature: 0,
-    });
+  let lastError: unknown = null;
 
-    const name = text.trim();
-    logger.info('orchestrator.llm_routing', 'LLM routed', {
-      requestId: ctx.requestId,
-      agent: name,
-      model: modelId,
-    });
-    send({
-      type: 'debug',
-      scope: 'orchestrator',
-      message: 'LLM routing завершён',
-      data: { agent: name },
-    });
-    return name;
-  } catch (err) {
-    logger.error('orchestrator.llm_routing', 'LLM routing failed, using first agent', {
-      requestId: ctx.requestId,
-      fallback: catalog[0].name,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    send({
-      type: 'debug',
-      scope: 'orchestrator',
-      message: 'LLM routing упал, использую первый доступный агент',
-      level: 'error',
-      data: {
-        fallback: catalog[0].name,
-        error: err instanceof Error ? err.message : 'Unknown error',
-      },
-    });
-    return catalog[0].name;
+  for (let index = 0; index < modelIds.length; index++) {
+    const modelId = modelIds[index];
+    const model = openrouter(modelId);
+
+    if (index > 0) {
+      send({
+        type: 'debug',
+        scope: 'orchestrator',
+        message: 'Основная router-model недоступна, пробую fallback model',
+        level: 'warn',
+        data: {
+          attempt: index + 1,
+          model: modelId,
+          previousModel: modelIds[index - 1],
+          error: lastError instanceof Error ? lastError.message : String(lastError),
+        },
+      });
+    }
+
+    try {
+      const result = await generateText({
+        model,
+        system,
+        messages,
+        temperature: 0,
+        output: Output.object({ schema: routerDecisionSchema }),
+      });
+      const output = result.output;
+      if (!output) {
+        throw new Error('Router did not return structured output');
+      }
+      logger.info('orchestrator.llm_routing', 'LLM routed', {
+        requestId: ctx.requestId,
+        agent: output.agent,
+        confidence: output.confidence,
+        reason: output.reason,
+        model: modelId,
+      });
+      send({
+        type: 'debug',
+        scope: 'orchestrator',
+        message: 'LLM routing завершён',
+        data: {
+          model: modelId,
+          attempt: index + 1,
+          agent: output.agent,
+          ...(output.confidence !== undefined ? { confidence: output.confidence } : {}),
+          ...(output.reason ? { reason: output.reason } : {}),
+        },
+      });
+      return output;
+    } catch (err) {
+      lastError = err;
+      if (index < modelIds.length - 1) {
+        logger.warn('orchestrator.llm_routing', 'Router model failed, retrying fallback model', {
+          requestId: ctx.requestId,
+          model: modelId,
+          fallbackModel: modelIds[index + 1],
+          error: err instanceof Error ? err.message : String(err),
+        });
+        continue;
+      }
+    }
   }
+
+  logger.error('orchestrator.llm_routing', 'All router models failed, using first agent', {
+    requestId: ctx.requestId,
+    attemptedModels: modelIds,
+    fallback: catalog[0].name,
+    error: lastError instanceof Error ? lastError.message : String(lastError),
+  });
+  send({
+    type: 'debug',
+    scope: 'orchestrator',
+    message: 'Все router-model недоступны, использую первый доступный агент',
+    level: 'error',
+    data: {
+      attemptedModels: modelIds,
+      fallback: catalog[0].name,
+      error: lastError instanceof Error ? lastError.message : 'Unknown error',
+    },
+  });
+  return {
+    agent: catalog[0].name,
+    confidence: 0,
+    reason: 'fallback after router model exhaustion',
+  };
 }

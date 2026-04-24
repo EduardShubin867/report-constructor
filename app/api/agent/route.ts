@@ -5,8 +5,10 @@ import { orchestrate } from '@/lib/agents/orchestrator';
 import type { AgentEvent } from '@/lib/agents/types';
 import type { AgentResponseOutput } from '@/lib/agents/agent-response-schema';
 import { recordAgentRun } from '@/lib/agent-analytics';
+import { normalizeAnalysisContext } from '@/lib/analysis-context';
 import { getBusinessToday } from '@/lib/business-time';
 import { logger } from '@/lib/logger';
+import type { AnalysisContext, OsagoChartSpec } from '@/lib/report-history-types';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120; // seconds — agent does multiple LLM roundtrips
@@ -14,6 +16,11 @@ export const maxDuration = 120; // seconds — agent does multiple LLM roundtrip
 /** Response shape returned by sub-agents after structured output + SSE */
 export interface AgentResponse extends AgentResponseOutput {
   _skillRounds?: number;
+  _selectedSource?: { sourceId: string; sourceName: string };
+  _analysisContext?: AnalysisContext;
+  format?: 'plain' | 'markdown';
+  charts?: OsagoChartSpec[];
+  metadata?: unknown;
 }
 
 /** SSE event types sent to the client */
@@ -30,7 +37,9 @@ export async function POST(request: NextRequest) {
     previousSql?: string;
     retryError?: string;
     skipAutoRowLimit?: boolean;
+    chatSessionId?: string;
     history?: ModelMessage[];
+    analysisContext?: AnalysisContext;
   };
   try {
     body = await request.json();
@@ -38,7 +47,8 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const { query, previousSql, retryError, skipAutoRowLimit, history } = body;
+  const { query, previousSql, retryError, skipAutoRowLimit, chatSessionId, history } = body;
+  const analysisContext = normalizeAnalysisContext(body.analysisContext);
   if (!query?.trim()) {
     return Response.json({ error: 'Запрос не может быть пустым' }, { status: 400 });
   }
@@ -63,12 +73,16 @@ export async function POST(request: NextRequest) {
         await orchestrate({
           ctx: {
             requestId,
+            ...(typeof chatSessionId === 'string' && chatSessionId.trim().length > 0
+              ? { chatSessionId: chatSessionId.trim() }
+              : {}),
             today,
             query,
             previousSql,
             retryError,
             ...(skipAutoRowLimit === true ? { skipAutoRowLimit: true } : {}),
             ...(Array.isArray(history) && history.length > 0 ? { history } : {}),
+            ...(analysisContext ? { analysisContext } : {}),
           },
           send,
         });

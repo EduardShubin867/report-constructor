@@ -6,6 +6,7 @@
 
 import type { SubAgentConfig, AgentContext } from './types';
 import {
+  getAnalysisContextSection,
   getCriticalDatabaseRulesSection,
   getTerritoryScopedUserMessageNote,
 } from './shared-db-rules';
@@ -34,6 +35,8 @@ function buildSystemPrompt(ctx: AgentContext): string {
 СУБД: Microsoft SQL Server
 ${limitNote}
 ${schema}
+
+${getAnalysisContextSection(ctx.analysisContext)}
 
 ## Инструменты и инструкции
 
@@ -161,17 +164,6 @@ const sqlAnalyst: SubAgentConfig = {
   description: 'Генерирует SQL-запросы для отчётов по страховой марже ОСАГО. Умеет искать значения в справочниках, валидировать запросы и предлагать уточнения.',
   // model: undefined — uses env/default
   maxRounds: 5,
-  match(ctx) {
-    const q = ctx.query.toLowerCase();
-    // Let specialist agents handle their domains
-    if (/(убыток|убытк|убыточн|выплат|урегулир|страховой случай)/.test(q)) return 0.3;
-    if (/(динамик|тренд|рост|падение|по месяц|по кварт|прошл.{0,5}(год|месяц)|сравни.{0,10}период|yoy|mom)/.test(q)) return 0.3;
-    if (/(почему|объясни|что означает|расскажи|проанализируй|интерпретир)/.test(q)) return 0.2;
-    // General SQL/report queries
-    if (/(запрос|отчёт|отчет|таблиц|топ|рейтинг|маржа|агент|дг|крм|крп|договор|полис|премия|осаго|список|сводк)/.test(q)) return 0.8;
-    if (/(данн|стат|показател|сумм|количеств|счёт|счет)/.test(q)) return 0.6;
-    return 0.5; // default — sql-analyst is the general fallback
-  },
   buildSystemPrompt,
   buildUserMessage,
 };

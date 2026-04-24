@@ -67,12 +67,26 @@ export function DatePicker({
   const [month, setMonth] = useState<Date | undefined>(defaultMonth);
 
   useEffect(() => {
-    setInputText(formatDateLabel(value));
-    setInputError(false);
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setInputText(formatDateLabel(value));
+      setInputError(false);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [value]);
 
   useEffect(() => {
-    if (open && selected) setMonth(selected);
+    if (!open || !selected) return;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) setMonth(selected);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [open, selected]);
 
   function tryCommit(text: string) {

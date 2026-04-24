@@ -12,6 +12,7 @@ import {
   TriangleAlert,
 } from 'lucide-react';
 import SqlHighlight from '@/components/SqlHighlight';
+import MarkdownText from '@/components/agent-chat/MarkdownText';
 import { resolveAiColumnHeader } from '@/lib/column-header';
 import type { ArtifactPayload } from '@/lib/report-history-types';
 
@@ -90,9 +91,9 @@ export default function AgentArtifactCard({
                 · нажмите, чтобы развернуть
               </span>
             </div>
-            <p className="max-w-5xl text-sm leading-6 text-on-surface">
-              {summary}
-            </p>
+            <div className="max-w-5xl text-sm text-on-surface">
+              <MarkdownText text={summary} renderImages={false} />
+            </div>
             {artifact.skillRounds ? (
               <p className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-on-surface-variant">
                 <FlaskConical className="h-3.5 w-3.5" strokeWidth={2.1} />

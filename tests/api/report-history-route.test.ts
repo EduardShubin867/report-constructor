@@ -78,6 +78,74 @@ describe('/api/report-history routes', () => {
     expect(listBody.items[0].id).toBe(createdBody.chat.id);
   });
 
+  it('lists and loads chats only for the requested mode', async () => {
+    const dbPath = createTempDbPath();
+    const { detailRoute, historyRoute } = await importHistoryRoutes(dbPath);
+
+    const constructorResponse = await historyRoute.POST(
+      createJsonRequest('/api/report-history', {
+        body: {
+          mode: 'constructor',
+          turn: {
+            userQuery: 'Обычный режим',
+            assistant: {
+              kind: 'text',
+              suggestions: [],
+              text: 'constructor',
+            },
+          },
+        },
+      }),
+    );
+    const cookie = extractCookie(constructorResponse, 'constructor_viewer_id');
+    const constructorBody = await constructorResponse.json();
+
+    const osagoResponse = await historyRoute.POST(
+      createJsonRequest('/api/report-history', {
+        headers: { cookie: cookie! },
+        body: {
+          mode: 'osago-agent',
+          turn: {
+            userQuery: 'ML режим',
+            assistant: {
+              kind: 'text',
+              format: 'markdown',
+              suggestions: [],
+              text: '**osago**',
+            },
+          },
+        },
+      }),
+    );
+    const osagoBody = await osagoResponse.json();
+
+    const constructorList = await historyRoute.GET(
+      createNextRequest('/api/report-history?mode=constructor', {
+        headers: { cookie: cookie! },
+      }),
+    );
+    const osagoList = await historyRoute.GET(
+      createNextRequest('/api/report-history?mode=osago-agent', {
+        headers: { cookie: cookie! },
+      }),
+    );
+
+    await expect(constructorList.json()).resolves.toMatchObject({
+      items: [{ id: constructorBody.chat.id, mode: 'constructor' }],
+    });
+    await expect(osagoList.json()).resolves.toMatchObject({
+      items: [{ id: osagoBody.chat.id, mode: 'osago-agent' }],
+    });
+
+    const wrongModeDetail = await detailRoute.GET(
+      createNextRequest(`/api/report-history/${osagoBody.chat.id}?mode=constructor`, {
+        headers: { cookie: cookie! },
+      }),
+      { params: Promise.resolve({ id: osagoBody.chat.id }) } as never,
+    );
+    expect(wrongModeDetail.status).toBe(404);
+  });
+
   it('rejects malformed assistant payloads', async () => {
     const dbPath = createTempDbPath();
     const { historyRoute } = await importHistoryRoutes(dbPath);

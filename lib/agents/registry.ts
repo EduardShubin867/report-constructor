@@ -8,10 +8,12 @@
  * ## Model resolution
  *
  * Router (orchestrator):
- *   opts.routerModel → OPENROUTER_ROUTER_MODEL → OPENROUTER_MODEL → FALLBACK
+ *   primary: opts.routerModel → OPENROUTER_ROUTER_MODEL → OPENROUTER_MODEL → FALLBACK
+ *   retry: OPENROUTER_ROUTER_FALLBACK_MODEL → ROUTER_FALLBACK_MODEL
  *
  * Sub-agent:
- *   agent.model → OPENROUTER_AGENT_MODEL → OPENROUTER_MODEL → FALLBACK
+ *   primary: agent.model → OPENROUTER_AGENT_MODEL → OPENROUTER_MODEL → FALLBACK
+ *   retry: OPENROUTER_AGENT_FALLBACK_MODEL → AGENT_FALLBACK_MODEL
  */
 
 import type { SubAgentConfig } from './types';
@@ -19,12 +21,16 @@ import sqlAnalyst from './sql-analyst';
 import trendAnalyst from './trend-analyst';
 import claimsAnalyst from './claims-analyst';
 import explainAnalyst from './explain-analyst';
+import osagoAnalyst from './osago-analyst';
 
 // ── Hardcoded fallback (last resort) ─────────────────────────────────
 const FALLBACK_MODEL = 'google/gemini-2.0-flash-001';
+const AGENT_FALLBACK_MODEL = 'openai/gpt-4.1-mini';
+const ROUTER_FALLBACK_MODEL = 'openai/gpt-4.1-mini';
 
 // ── Register sub-agents ──────────────────────────────────────────────
 const SUB_AGENTS: SubAgentConfig[] = [
+  osagoAnalyst,  // before sql-analyst — handles OSAGO ML analytical queries
   trendAnalyst,
   claimsAnalyst,
   explainAnalyst,
@@ -54,6 +60,17 @@ export function resolveAgentModel(override?: string): string {
 }
 
 /**
+ * Resolve sub-agent model candidates for retry.
+ * Primary model comes from the normal sub-agent resolution chain.
+ * Fallback model is dedicated for runner-level retries when the primary LLM call fails.
+ */
+export function resolveAgentModelCandidates(override?: string): string[] {
+  const primary = resolveAgentModel(override);
+  const fallback = process.env.OPENROUTER_AGENT_FALLBACK_MODEL || AGENT_FALLBACK_MODEL;
+  return [...new Set([primary, fallback])];
+}
+
+/**
  * Resolve model for the orchestrator's router.
  * Priority: opts.routerModel → OPENROUTER_ROUTER_MODEL → OPENROUTER_MODEL → FALLBACK
  */
@@ -62,6 +79,17 @@ export function resolveRouterModel(override?: string): string {
     || process.env.OPENROUTER_ROUTER_MODEL
     || process.env.OPENROUTER_MODEL
     || FALLBACK_MODEL;
+}
+
+/**
+ * Resolve router model candidates for retry.
+ * Primary model comes from the normal router resolution chain.
+ * Fallback model is dedicated for structured-output-safe routing retries.
+ */
+export function resolveRouterModelCandidates(override?: string): string[] {
+  const primary = resolveRouterModel(override);
+  const fallback = process.env.OPENROUTER_ROUTER_FALLBACK_MODEL || ROUTER_FALLBACK_MODEL;
+  return [...new Set([primary, fallback])];
 }
 
 /**

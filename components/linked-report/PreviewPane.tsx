@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import ReportPreviewTable from '@/components/ReportPreviewTable';
-import UnifiedReportTable from '@/components/UnifiedReportTable';
+import UnifiedReportTable from '@/components/unified-report-table';
 import type { LinkedReportResponse } from '@/lib/linked-report';
 import type { ManualReportSourcePayload } from '@/lib/report-filters-data';
 import type { SourceLink } from '@/lib/schema';

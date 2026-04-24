@@ -1,3 +1,6 @@
+import { buildAnalysisContextSummary } from '@/lib/analysis-context';
+import type { AnalysisContext } from '@/lib/report-history-types';
+
 export function isTerritoryScopedQuery(query: string): boolean {
   return /(город|регион|территор|санкт|петербург|спб|москв)/i.test(query);
 }
@@ -18,4 +21,16 @@ export function getTerritoryScopedUserMessageNote(query: string): string {
   if (!isTerritoryScopedQuery(query)) return '';
 
   return '\n\nВажно: это территориальный запрос. Сначала вызови lookup_territory и фильтруй через JOIN [dbo].[Территории] AS ter ON m.[ID_ТерриторияИспользованияТС] = ter.[ID]. Не фильтруй по m.[Регион] или m.[РегионФакт] напрямую.';
+}
+
+export function getAnalysisContextSection(context: AnalysisContext | undefined): string {
+  const summary = buildAnalysisContextSummary(context);
+  if (!summary) return '';
+
+  return `${summary}
+
+Правила использования контекста:
+1. Не считай контекст новым фильтром, если пользователь явно задаёт другие условия.
+2. Для коротких follow-up запросов сохраняй предыдущие ДГ/территорию/период/разрез.
+3. Если используешь значения из контекста в SQL, всё равно соблюдай правила lookup/валидации выше.`;
 }

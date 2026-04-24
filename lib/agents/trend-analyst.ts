@@ -7,6 +7,7 @@
 
 import type { SubAgentConfig, AgentContext } from './types';
 import {
+  getAnalysisContextSection,
   getCriticalDatabaseRulesSection,
   getTerritoryScopedUserMessageNote,
 } from './shared-db-rules';
@@ -23,6 +24,8 @@ function buildSystemPrompt(ctx: AgentContext): string {
 СУБД: Microsoft SQL Server
 
 ${schema}
+
+${getAnalysisContextSection(ctx.analysisContext)}
 
 ## Твоя специализация
 
@@ -150,12 +153,6 @@ const trendAnalyst: SubAgentConfig = {
   name: 'trend-analyst',
   description: 'Анализ динамики и временных рядов: MoM/YoY сравнения, скользящие средние, оконные функции LAG/LEAD, накопленные итоги. Используй для запросов о росте, трендах, динамике по месяцам/кварталам/годам.',
   maxRounds: 5,
-  match(ctx) {
-    const q = ctx.query.toLowerCase();
-    if (/(динамик|тренд|рост|падение|по месяц|по кварт|понедель|по год|прошл.{0,5}(год|месяц|квартал)|сравни.{0,10}период|год.{0,5}год|месяц.{0,5}месяц|yoy|mom|накопл|скользящ|нараста)/.test(q)) return 0.9;
-    if (/(изменени.{0,10}(премии|маржи|договор)|как менял|как изменил)/.test(q)) return 0.8;
-    return 0;
-  },
   buildSystemPrompt,
   buildUserMessage,
 };

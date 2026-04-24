@@ -3,9 +3,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import type { NextRequest, NextResponse } from 'next/server';
+import { normalizeAnalysisContext } from '@/lib/analysis-context';
+import { normalizeOsagoChartSpecs } from '@/lib/osago-chart-specs';
 import type {
   ArtifactPayload,
   AssistantMessageTone,
+  AssistantMessageFormat,
+  ChatMode,
   SavedChatAssistantMessage,
   SavedChatSession,
   SavedChatSummary,
@@ -14,11 +18,25 @@ import type {
 } from '@/lib/report-history-types';
 
 const ALLOWED_TONES: ReadonlySet<AssistantMessageTone> = new Set(['info', 'warning', 'error']);
+const ALLOWED_MODES: ReadonlySet<ChatMode> = new Set(['constructor', 'osago-agent']);
+const ALLOWED_FORMATS: ReadonlySet<AssistantMessageFormat> = new Set(['plain', 'markdown']);
 
 function safeTone(value: unknown): AssistantMessageTone | undefined {
   return typeof value === 'string' && ALLOWED_TONES.has(value as AssistantMessageTone)
     ? (value as AssistantMessageTone)
     : undefined;
+}
+
+function safeFormat(value: unknown): AssistantMessageFormat | undefined {
+  return typeof value === 'string' && ALLOWED_FORMATS.has(value as AssistantMessageFormat)
+    ? (value as AssistantMessageFormat)
+    : undefined;
+}
+
+export function normalizeChatMode(value: unknown): ChatMode {
+  return typeof value === 'string' && ALLOWED_MODES.has(value as ChatMode)
+    ? (value as ChatMode)
+    : 'constructor';
 }
 
 function safeDetail(value: unknown): string | undefined {
@@ -34,6 +52,7 @@ let dbSingleton: Database.Database | null = null;
 
 interface ChatSessionRow {
   id: string;
+  mode: ChatMode;
   first_query: string;
   latest_query: string;
   created_at: string;
@@ -108,6 +127,9 @@ function normalizeAssistantMessage(
   const text = assistant?.text?.trim() || fallbackText;
 
   const tone = safeTone((assistant as { tone?: unknown } | undefined)?.tone);
+  const analysisContext = normalizeAnalysisContext(
+    (assistant as { analysisContext?: unknown } | undefined)?.analysisContext,
+  );
 
   if (assistant?.kind === 'artifact' && assistant.artifact && isArtifactPayload(assistant.artifact)) {
     const artifact = normalizeArtifactPayload(assistant.artifact);
@@ -116,15 +138,21 @@ function normalizeAssistantMessage(
       text: text || artifact.explanation || 'Отчёт сформирован.',
       suggestions,
       artifact,
+      ...(analysisContext ? { analysisContext } : {}),
       ...(tone ? { tone } : {}),
     };
   }
 
   const detail = safeDetail((assistant as { detail?: unknown } | undefined)?.detail);
+  const format = safeFormat((assistant as { format?: unknown } | undefined)?.format);
+  const charts = normalizeOsagoChartSpecs((assistant as { charts?: unknown } | undefined)?.charts);
   return {
     kind: 'text',
     text: text || 'Ответ сформирован.',
     suggestions,
+    ...(format && format !== 'plain' ? { format } : {}),
+    ...(charts.length > 0 ? { charts } : {}),
+    ...(analysisContext ? { analysisContext } : {}),
     ...(tone ? { tone } : {}),
     ...(detail ? { detail } : {}),
   };
@@ -213,6 +241,7 @@ function openDb(): Database.Database {
     CREATE TABLE IF NOT EXISTS report_sessions (
       id TEXT PRIMARY KEY,
       viewer_id TEXT NOT NULL,
+      mode TEXT NOT NULL DEFAULT 'constructor',
       first_query TEXT NOT NULL,
       latest_query TEXT NOT NULL,
       created_at TEXT NOT NULL,
@@ -231,6 +260,20 @@ function openDb(): Database.Database {
       ON report_sessions(viewer_id, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_report_versions_session_version
       ON report_versions(session_id, version_index ASC);
+  `);
+
+  const sessionColumns = db.prepare('PRAGMA table_info(report_sessions)').all() as { name: string }[];
+  const hasMode = sessionColumns.some(column => column.name === 'mode');
+  if (!hasMode) {
+    db.exec(`
+      ALTER TABLE report_sessions
+        ADD COLUMN mode TEXT NOT NULL DEFAULT 'constructor';
+    `);
+  }
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_report_sessions_viewer_mode_updated
+      ON report_sessions(viewer_id, mode, updated_at DESC);
   `);
 
   return db;
@@ -308,6 +351,7 @@ export function applyViewerCookie(
 function mapSummary(row: ChatSessionRow): SavedChatSummary {
   return {
     id: row.id,
+    mode: normalizeChatMode(row.mode),
     firstQuery: row.first_query,
     latestQuery: row.latest_query,
     turnCount: Number(row.turn_count),
@@ -316,17 +360,17 @@ function mapSummary(row: ChatSessionRow): SavedChatSummary {
   };
 }
 
-function pruneViewerChats(viewerId: string): void {
+function pruneViewerChats(viewerId: string, mode: ChatMode): void {
   const db = getDb();
   const staleIds = db
     .prepare(
       `SELECT id
        FROM report_sessions
-       WHERE viewer_id = @viewerId
+       WHERE viewer_id = @viewerId AND mode = @mode
        ORDER BY updated_at DESC, created_at DESC, rowid DESC
        LIMIT -1 OFFSET @offset`,
     )
-    .all({ viewerId, offset: MAX_CHATS_PER_VIEWER }) as { id: string }[];
+    .all({ viewerId, mode, offset: MAX_CHATS_PER_VIEWER }) as { id: string }[];
 
   if (staleIds.length === 0) return;
 
@@ -337,12 +381,14 @@ function pruneViewerChats(viewerId: string): void {
   tx(staleIds.map(row => row.id));
 }
 
-export function listViewerChats(viewerId: string, limit: number): SavedChatSummary[] {
+export function listViewerChats(viewerId: string, limit: number, mode: ChatMode = 'constructor'): SavedChatSummary[] {
   const db = getDb();
   const safeLimit = Math.max(1, Math.min(limit, MAX_CHATS_PER_VIEWER));
+  const safeMode = normalizeChatMode(mode);
   const rows = db
     .prepare(
       `SELECT s.id,
+              s.mode,
               s.first_query,
               s.latest_query,
               s.created_at,
@@ -350,21 +396,23 @@ export function listViewerChats(viewerId: string, limit: number): SavedChatSumma
               COUNT(v.id) AS turn_count
        FROM report_sessions s
        LEFT JOIN report_versions v ON v.session_id = s.id
-       WHERE s.viewer_id = @viewerId
+       WHERE s.viewer_id = @viewerId AND s.mode = @mode
        GROUP BY s.id
        ORDER BY s.updated_at DESC
        LIMIT @limit`,
     )
-    .all({ viewerId, limit: safeLimit }) as ChatSessionRow[];
+    .all({ viewerId, mode: safeMode, limit: safeLimit }) as ChatSessionRow[];
 
   return rows.map(mapSummary);
 }
 
-export function getViewerChat(viewerId: string, chatId: string): SavedChatSession | null {
+export function getViewerChat(viewerId: string, chatId: string, mode: ChatMode = 'constructor'): SavedChatSession | null {
   const db = getDb();
+  const safeMode = normalizeChatMode(mode);
   const session = db
     .prepare(
       `SELECT s.id,
+              s.mode,
               s.first_query,
               s.latest_query,
               s.created_at,
@@ -372,11 +420,11 @@ export function getViewerChat(viewerId: string, chatId: string): SavedChatSessio
               COUNT(v.id) AS turn_count
        FROM report_sessions s
        LEFT JOIN report_versions v ON v.session_id = s.id
-       WHERE s.viewer_id = @viewerId AND s.id = @chatId
+       WHERE s.viewer_id = @viewerId AND s.id = @chatId AND s.mode = @mode
        GROUP BY s.id
        LIMIT 1`,
     )
-    .get({ viewerId, chatId }) as ChatSessionRow | undefined;
+    .get({ viewerId, chatId, mode: safeMode }) as ChatSessionRow | undefined;
 
   if (!session) return null;
 
@@ -398,6 +446,7 @@ export function getViewerChat(viewerId: string, chatId: string): SavedChatSessio
 export interface SaveViewerChatTurnParams {
   viewerId: string;
   chatId?: string;
+  mode?: ChatMode;
   turn: SavedChatTurnInput;
 }
 
@@ -406,22 +455,23 @@ export function saveViewerChatTurn(params: SaveViewerChatTurnParams): SavedChatS
   const userQuery = truncateQuery(params.turn.userQuery);
   const nowIso = new Date().toISOString();
   const requestedChatId = normalizeEntityId(params.chatId);
+  const mode = normalizeChatMode(params.mode);
 
   const tx = db.transaction(() => {
     const existingChatRow = requestedChatId
       ? db
           .prepare(
-            `SELECT id, viewer_id
+            `SELECT id, viewer_id, mode
              FROM report_sessions
              WHERE id = @chatId
              LIMIT 1`,
           )
-          .get({ chatId: requestedChatId }) as { id: string; viewer_id: string } | undefined
+          .get({ chatId: requestedChatId }) as { id: string; viewer_id: string; mode: string } | undefined
       : undefined;
 
     const chatId = !requestedChatId
       ? crypto.randomUUID()
-      : !existingChatRow || existingChatRow.viewer_id === params.viewerId
+      : !existingChatRow || (existingChatRow.viewer_id === params.viewerId && normalizeChatMode(existingChatRow.mode) === mode)
         ? requestedChatId
         : crypto.randomUUID();
 
@@ -429,18 +479,19 @@ export function saveViewerChatTurn(params: SaveViewerChatTurnParams): SavedChatS
       .prepare(
         `SELECT id
          FROM report_sessions
-         WHERE id = @chatId AND viewer_id = @viewerId
+         WHERE id = @chatId AND viewer_id = @viewerId AND mode = @mode
          LIMIT 1`,
       )
-      .get({ chatId, viewerId: params.viewerId }) as { id: string } | undefined;
+      .get({ chatId, viewerId: params.viewerId, mode }) as { id: string } | undefined;
 
     if (!existing) {
       db.prepare(
-        `INSERT INTO report_sessions (id, viewer_id, first_query, latest_query, created_at, updated_at)
-         VALUES (@id, @viewer_id, @first_query, @latest_query, @created_at, @updated_at)`,
+        `INSERT INTO report_sessions (id, viewer_id, mode, first_query, latest_query, created_at, updated_at)
+         VALUES (@id, @viewer_id, @mode, @first_query, @latest_query, @created_at, @updated_at)`,
       ).run({
         id: chatId,
         viewer_id: params.viewerId,
+        mode,
         first_query: userQuery,
         latest_query: userQuery,
         created_at: nowIso,
@@ -451,10 +502,11 @@ export function saveViewerChatTurn(params: SaveViewerChatTurnParams): SavedChatS
         `UPDATE report_sessions
          SET latest_query = @latest_query,
              updated_at = @updated_at
-         WHERE id = @id AND viewer_id = @viewer_id`,
+         WHERE id = @id AND viewer_id = @viewer_id AND mode = @mode`,
       ).run({
         id: chatId,
         viewer_id: params.viewerId,
+        mode,
         latest_query: userQuery,
         updated_at: nowIso,
       });
@@ -484,9 +536,9 @@ export function saveViewerChatTurn(params: SaveViewerChatTurnParams): SavedChatS
   });
 
   const chatId = tx();
-  pruneViewerChats(params.viewerId);
+  pruneViewerChats(params.viewerId, mode);
 
-  const chat = getViewerChat(params.viewerId, chatId);
+  const chat = getViewerChat(params.viewerId, chatId, mode);
   if (!chat) {
     throw new Error('Не удалось прочитать сохраненный чат');
   }

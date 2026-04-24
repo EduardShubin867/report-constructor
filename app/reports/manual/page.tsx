@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import ManualReportRoute from '@/components/ManualReportRoute';
+import ManualReportRoute from '@/components/manual-report-route';
 
 export const dynamic = 'force-dynamic';
 import { loadSourceFilterOptions, type ManualReportSourcePayload } from '@/lib/report-filters-data';

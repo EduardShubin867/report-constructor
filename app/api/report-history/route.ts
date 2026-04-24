@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   applyViewerCookie,
   listViewerChats,
+  normalizeChatMode,
   resolveViewerId,
   saveViewerChatTurn,
 } from '@/lib/report-history';
+import { normalizeOsagoChartSpecs } from '@/lib/osago-chart-specs';
 import type {
   ArtifactPayload,
   SavedChatAssistantMessage,
@@ -17,16 +19,17 @@ export async function GET(request: NextRequest) {
   const viewer = resolveViewerId(request);
   const { searchParams } = new URL(request.url);
   const limit = Number(searchParams.get('limit') ?? '6') || 6;
+  const mode = normalizeChatMode(searchParams.get('mode'));
 
   const response = NextResponse.json({
-    items: listViewerChats(viewer.viewerId, limit),
+    items: listViewerChats(viewer.viewerId, limit, mode),
   });
   applyViewerCookie(response, viewer);
   return response;
 }
 
 export async function POST(request: NextRequest) {
-  let body: { chatId?: string; turn?: SavedChatTurnInput };
+  let body: { chatId?: string; mode?: string; turn?: SavedChatTurnInput };
   try {
     body = await request.json();
   } catch {
@@ -42,11 +45,13 @@ export async function POST(request: NextRequest) {
   }
 
   const viewer = resolveViewerId(request);
+  const mode = normalizeChatMode(body.mode);
 
   try {
     const chat = saveViewerChatTurn({
       viewerId: viewer.viewerId,
       chatId: body.chatId,
+      mode,
       turn: body.turn,
     });
 
@@ -75,6 +80,15 @@ function isValidAssistantMessage(value: unknown): value is SavedChatAssistantMes
   const assistant = value as Partial<SavedChatAssistantMessage>;
   if (typeof assistant.text !== 'string' || !Array.isArray(assistant.suggestions)) {
     return false;
+  }
+  if ('format' in assistant && assistant.format !== undefined && assistant.format !== 'plain' && assistant.format !== 'markdown') {
+    return false;
+  }
+  if ('charts' in assistant && assistant.charts !== undefined) {
+    if (!Array.isArray(assistant.charts)) return false;
+    if (assistant.charts.length > 0 && normalizeOsagoChartSpecs(assistant.charts).length === 0) {
+      return false;
+    }
   }
   if (assistant.kind === 'text') return true;
   return assistant.kind === 'artifact' && isArtifactPayload(assistant.artifact);

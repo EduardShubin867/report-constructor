@@ -23,6 +23,12 @@ services:
       # AI
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
       OPENROUTER_MODEL: ${OPENROUTER_MODEL}
+      # ML-agent OSAGO backend
+      OSAGO_AGENT_BASE_URL: ${OSAGO_AGENT_DOCKER_BASE_URL:-http://host.docker.internal:8000}
+      OSAGO_AGENT_USERNAME: ${OSAGO_AGENT_USERNAME}
+      OSAGO_AGENT_PASSWORD: ${OSAGO_AGENT_PASSWORD}
+      OSAGO_AGENT_TIMEOUT_MS: ${OSAGO_AGENT_TIMEOUT_MS:-1200000}
+      OSAGO_AGENT_SSE_HEARTBEAT_MS: ${OSAGO_AGENT_SSE_HEARTBEAT_MS:-15000}
       # App
       NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3400/constructor}
       # Admin / analytics (must be listed here — host .env is not injected implicitly)

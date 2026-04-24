@@ -113,6 +113,115 @@ describe('report-history', () => {
     expect(stored?.turns).toHaveLength(2);
   });
 
+  it('keeps constructor and OSAGO agent histories separate per viewer', async () => {
+    const dbPath = createTempDbPath();
+    const { getViewerChat, listViewerChats, saveViewerChatTurn } = await importReportHistory(dbPath);
+    const viewerId = 'anon_1234567890abcdef1234567890abcd';
+
+    const constructorChat = saveViewerChatTurn({
+      viewerId,
+      mode: 'constructor',
+      turn: {
+        userQuery: 'Построй SQL отчёт',
+        assistant: {
+          kind: 'text',
+          suggestions: [],
+          text: 'SQL режим',
+        },
+      },
+    });
+
+    const osagoChat = saveViewerChatTurn({
+      viewerId,
+      mode: 'osago-agent',
+      turn: {
+        userQuery: 'Проанализируй маржинальность Москвы',
+        assistant: {
+          kind: 'text',
+          format: 'markdown',
+          charts: [
+            {
+              id: 'margin',
+              type: 'bar',
+              title: 'Динамика маржи',
+              xKey: 'month',
+              valueType: 'money',
+              series: [{ key: 'margin', label: 'Маржа' }],
+              data: [{ month: '2026-01', margin: 1200000 }],
+            },
+          ],
+          suggestions: [],
+          text: '**ML режим**',
+        },
+      },
+    });
+
+    expect(listViewerChats(viewerId, 6, 'constructor').map(chat => chat.id)).toEqual([constructorChat.id]);
+    expect(listViewerChats(viewerId, 6, 'osago-agent').map(chat => chat.id)).toEqual([osagoChat.id]);
+    expect(getViewerChat(viewerId, constructorChat.id, 'osago-agent')).toBeNull();
+    expect(getViewerChat(viewerId, osagoChat.id, 'constructor')).toBeNull();
+    expect(getViewerChat(viewerId, osagoChat.id, 'osago-agent')?.turns[0].assistant).toMatchObject({
+      kind: 'text',
+      format: 'markdown',
+      charts: [
+        expect.objectContaining({
+          id: 'margin',
+          type: 'bar',
+          data: [{ month: '2026-01', margin: 1200000 }],
+        }),
+      ],
+      text: '**ML режим**',
+    });
+  });
+
+  it('round-trips analysis context on saved assistant messages', async () => {
+    const dbPath = createTempDbPath();
+    const { getViewerChat, saveViewerChatTurn } = await importReportHistory(dbPath);
+    const viewerId = 'anon_1234567890abcdef1234567890abcd';
+
+    const saved = saveViewerChatTurn({
+      viewerId,
+      mode: 'constructor',
+      turn: {
+        userQuery: 'Покажи маржу по ДГ 131',
+        assistant: {
+          kind: 'artifact',
+          text: 'Маржа по ДГ 131.',
+          suggestions: [],
+          analysisContext: {
+            source: { id: 'osago-margin', name: 'ОСАГО маржа' },
+            filters: { dg: ['131'] },
+            metrics: ['маржа'],
+            dimensions: ['ДГ'],
+            lastSql: 'SELECT 1',
+            lastQuestion: 'Покажи маржу по ДГ 131',
+            lastRowCount: 1,
+          },
+          artifact: {
+            data: [{ ДГ: '131', Маржа: 1000 }],
+            columns: ['ДГ', 'Маржа'],
+            rowCount: 1,
+            validatedSql: 'SELECT 1',
+            sql: 'SELECT 1',
+            explanation: 'Маржа по ДГ 131.',
+          },
+        },
+      },
+    });
+
+    const reloaded = getViewerChat(viewerId, saved.id);
+    expect(reloaded?.turns[0].assistant).toMatchObject({
+      kind: 'artifact',
+      analysisContext: {
+        source: { id: 'osago-margin', name: 'ОСАГО маржа' },
+        filters: { dg: ['131'] },
+        metrics: ['маржа'],
+        dimensions: ['ДГ'],
+        lastRowCount: 1,
+      },
+    });
+  });
+
   it('parses legacy artifact payloads from older stored turns', async () => {
     const dbPath = createTempDbPath();
     const { getReportHistoryDbPath, getViewerChat, saveViewerChatTurn } = await importReportHistory(dbPath);

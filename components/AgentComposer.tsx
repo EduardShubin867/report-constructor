@@ -29,6 +29,8 @@ interface AgentComposerProps {
   runButtonLabel: string;
   skipAutoRowLimit: boolean;
   onSkipAutoRowLimitChange: (value: boolean) => void;
+  showSkipAutoRowLimit?: boolean;
+  placeholder?: string;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   followUpContext?: FollowUpContext | null;
   onClearFollowUp?: () => void;
@@ -45,6 +47,8 @@ export default function AgentComposer({
   runButtonLabel,
   skipAutoRowLimit,
   onSkipAutoRowLimitChange,
+  showSkipAutoRowLimit = true,
+  placeholder,
   textareaRef,
   followUpContext,
   onClearFollowUp,
@@ -112,24 +116,26 @@ export default function AgentComposer({
             disabled={disabled || isRunning}
             placeholder={followUpContext
               ? 'Опишите, что именно нужно уточнить в этом артефакте…'
-              : 'Например: сравни премии по регионам за прошлый квартал…'}
+              : placeholder ?? 'Например: сравни премии по регионам за прошлый квартал…'}
             className={textareaClass}
           />
 
           <div className="mt-2 flex items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => onSkipAutoRowLimitChange(!skipAutoRowLimit)}
-              disabled={disabled || isRunning}
-              aria-pressed={skipAutoRowLimit}
-              title={noLimitTooltip}
-              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 ${
-                skipAutoRowLimit ? 'ui-chip-accent' : 'ui-chip text-on-surface-variant hover:text-on-surface'
-              }`}
-            >
-              <InfinityIcon className="h-3.5 w-3.5" strokeWidth={2.1} />
-              Без лимита
-            </button>
+            {showSkipAutoRowLimit ? (
+              <button
+                type="button"
+                onClick={() => onSkipAutoRowLimitChange(!skipAutoRowLimit)}
+                disabled={disabled || isRunning}
+                aria-pressed={skipAutoRowLimit}
+                title={noLimitTooltip}
+                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 ${
+                  skipAutoRowLimit ? 'ui-chip-accent' : 'ui-chip text-on-surface-variant hover:text-on-surface'
+                }`}
+              >
+                <InfinityIcon className="h-3.5 w-3.5" strokeWidth={2.1} />
+                Без лимита
+              </button>
+            ) : null}
 
             {isRunning && (
               <button

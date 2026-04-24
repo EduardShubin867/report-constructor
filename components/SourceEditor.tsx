@@ -232,11 +232,13 @@ export default function SourceEditor({
         {phase === 'review' && source && (
           <SourceEditorReview
             source={source}
+            form={form}
             mainTable={mainTable}
             refTables={refTables}
             isEdit={isEdit}
             rescanningTable={rescanningTable}
             rescanMsg={rescanMsg}
+            onFieldChange={setField}
             onToggleManualReport={toggleManualReport}
             onRescan={handleRescan}
             onSetTableDisplayName={setTableDisplayName}

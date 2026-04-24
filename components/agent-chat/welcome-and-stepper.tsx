@@ -49,6 +49,39 @@ export const EXAMPLE_QUERIES = [
   },
 ];
 
+export const OSAGO_AGENT_EXAMPLE_QUERIES = [
+  {
+    icon: <MapPinned {...welcomeIconProps} />,
+    title: 'Маржинальность региона',
+    query: 'Покажи маржинальность Москвы по ОСАГО и графики LR',
+  },
+  {
+    icon: <Users {...welcomeIconProps} />,
+    title: 'Анализ агентов',
+    query: 'Проанализируй агентов по LR и частоте убытков',
+  },
+  {
+    icon: <Trophy {...welcomeIconProps} />,
+    title: 'Крупные выплаты',
+    query: 'Покажи топ-10 крупнейших выплат и выводы по ним',
+  },
+  {
+    icon: <CarFront {...welcomeIconProps} />,
+    title: 'Сегменты риска',
+    query: 'Разбери портфель по КБМ, КВС и пролонгации',
+  },
+  {
+    icon: <ChartColumn {...welcomeIconProps} />,
+    title: 'Общий портфель',
+    query: 'Дай сводку по всему портфелю ОСАГО',
+  },
+  {
+    icon: <FileText {...welcomeIconProps} />,
+    title: 'Убыточные договоры',
+    query: 'Найди самые убыточные договоры и объясни причины',
+  },
+];
+
 export const STEPPER_STEPS = [
   { label: 'Анализ', icon: <Sparkles {...stepIconProps} /> },
   { label: 'Уточнение', icon: <Search {...stepIconProps} /> },

@@ -44,11 +44,49 @@ interface GenerateBody {
   tables?: string[];
 }
 
-export async function POST(request: NextRequest) {
-  if (!process.env.OPENROUTER_API_KEY) {
-    return Response.json({ error: 'OPENROUTER_API_KEY не настроен' }, { status: 500 });
+function ensurePeriod(value: string): string {
+  return /[.!?。！？]$/.test(value) ? value : `${value}.`;
+}
+
+function buildLocalFallbackWhenToUse(params: {
+  name?: string;
+  draft?: string;
+  tables: string[];
+}): string {
+  const name = params.name?.trim();
+  const draft = params.draft?.replace(/\s+/g, ' ').trim();
+  const tables = params.tables.slice(0, 5);
+
+  const lead = draft
+    ? `Используй для запросов: ${draft}`
+    : `Используй для запросов по источнику «${name ?? 'данных'}»`;
+  const parts = [ensurePeriod(lead)];
+
+  if (tables.length > 0) {
+    parts.push(`Гранулярность и поля сверяй по таблицам: ${tables.join(', ')}.`);
   }
 
+  if (name) {
+    parts.push(`Примеры: «покажи данные источника ${name}», «сводка по источнику ${name}».`);
+  }
+
+  return parts.join(' ');
+}
+
+function fallbackResponse(params: {
+  name?: string;
+  draft?: string;
+  tables: string[];
+  warning: string;
+}) {
+  return Response.json({
+    whenToUse: buildLocalFallbackWhenToUse(params),
+    fallback: true,
+    warning: params.warning,
+  });
+}
+
+export async function POST(request: NextRequest) {
   let body: GenerateBody;
   try {
     body = await request.json();
@@ -65,6 +103,15 @@ export async function POST(request: NextRequest) {
       { error: 'Нужно указать хотя бы name или draft' },
       { status: 400 },
     );
+  }
+
+  if (!process.env.OPENROUTER_API_KEY) {
+    return fallbackResponse({
+      name,
+      draft,
+      tables,
+      warning: 'OPENROUTER_API_KEY не настроен',
+    });
   }
 
   const parts: string[] = [];
@@ -89,12 +136,16 @@ export async function POST(request: NextRequest) {
 
     const whenToUse = text.trim().replace(/^['"`]+|['"`]+$/g, '').trim();
     if (!whenToUse) {
-      return Response.json({ error: 'LLM вернула пустой ответ' }, { status: 502 });
+      return fallbackResponse({
+        name,
+        draft,
+        tables,
+        warning: 'LLM вернула пустой ответ',
+      });
     }
     return Response.json({ whenToUse });
   } catch (err) {
-    console.error('[generate-when-to-use] LLM call failed:', err);
     const message = err instanceof Error ? err.message : 'LLM недоступна';
-    return Response.json({ error: message }, { status: 502 });
+    return fallbackResponse({ name, draft, tables, warning: message });
   }
 }

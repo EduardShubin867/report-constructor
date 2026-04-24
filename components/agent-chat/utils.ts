@@ -1,6 +1,6 @@
 import type { AgentDebugTone } from '@/components/AgentDebugPanel';
 import type { StepStatus } from '@/components/AgentStepper';
-import type { SavedChatSession, SavedChatTurn } from '@/lib/report-history-types';
+import type { ChatMode, SavedChatSession, SavedChatTurn } from '@/lib/report-history-types';
 
 export function generateId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -102,10 +102,12 @@ export function buildOptimisticChat(
   current: SavedChatSession | null,
   chatId: string,
   turn: SavedChatTurn,
+  mode: ChatMode = 'constructor',
 ): SavedChatSession {
   if (!current || current.id !== chatId) {
     return {
       id: chatId,
+      mode,
       firstQuery: turn.userQuery,
       latestQuery: turn.userQuery,
       turnCount: 1,
@@ -117,6 +119,7 @@ export function buildOptimisticChat(
 
   return {
     ...current,
+    mode,
     latestQuery: turn.userQuery,
     turnCount: current.turns.length + 1,
     updatedAt: turn.createdAt,

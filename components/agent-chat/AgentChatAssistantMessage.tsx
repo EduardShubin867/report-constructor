@@ -1,6 +1,8 @@
 import { Bot, CircleAlert, TriangleAlert } from 'lucide-react';
 import { useState, type ReactElement } from 'react';
 import AgentArtifactCard from '@/components/AgentArtifactCard';
+import MarkdownText from '@/components/agent-chat/MarkdownText';
+import OsagoChartCards from '@/components/agent-chat/OsagoChartCards';
 import type { AssistantMessageTone, SavedChatTurn } from '@/lib/report-history-types';
 
 type ToneStyles = {
@@ -49,9 +51,10 @@ export default function AgentChatAssistantMessage({
   const tone = turn.assistant.tone ?? 'info';
   const toneStyles = tone !== 'info' ? TONE_STYLES[tone] : null;
   const detail = turn.assistant.kind === 'text' ? turn.assistant.detail : undefined;
+  const charts = turn.assistant.kind === 'text' ? turn.assistant.charts ?? [] : [];
 
   return (
-    <div className={artifact ? 'w-full max-w-none space-y-3' : 'max-w-[46rem] space-y-3'}>
+    <div className={artifact ? 'w-full max-w-none space-y-3' : charts.length > 0 ? 'max-w-[58rem] space-y-3' : 'max-w-[46rem] space-y-3'}>
       {artifact ? (
         <AgentArtifactCard
           artifact={artifact}
@@ -64,7 +67,7 @@ export default function AgentChatAssistantMessage({
         />
       ) : (
         <div
-          className={`ui-panel max-w-[46rem] rounded-[28px] px-5 py-4 text-sm leading-6 text-on-surface ${toneStyles?.panel ?? ''}`}
+          className={`ui-panel ${charts.length > 0 ? 'max-w-[58rem]' : 'max-w-[46rem]'} rounded-[28px] px-5 py-4 text-sm leading-6 text-on-surface ${toneStyles?.panel ?? ''}`}
         >
           <div className="mb-2 flex items-center gap-2">
             <span
@@ -76,7 +79,14 @@ export default function AgentChatAssistantMessage({
               {toneStyles?.label ?? 'Ответ'}
             </span>
           </div>
-          <p className="whitespace-pre-line">{turn.assistant.text}</p>
+          {turn.assistant.kind === 'text' ? (
+            <MarkdownText text={turn.assistant.text} renderImages={charts.length === 0} />
+          ) : null}
+          {charts.length > 0 ? (
+            <div className="mt-4">
+              <OsagoChartCards charts={charts} />
+            </div>
+          ) : null}
           {detail ? (
             <div className="mt-3">
               <button

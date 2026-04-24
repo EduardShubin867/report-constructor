@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 
 export type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 export type Phase = 'idle' | 'thinking' | 'validating' | 'retrying' | 'self-checking' | 'done' | 'error';
-export type DebugScope = 'client' | 'phase' | 'tool' | 'result' | 'error' | 'orchestrator' | 'runner' | 'query';
+export type DebugScope = 'client' | 'phase' | 'tool' | 'result' | 'error' | 'orchestrator' | 'runner' | 'query' | 'osago-agent';
 
 export type PendingTurn = {
   id: string;
